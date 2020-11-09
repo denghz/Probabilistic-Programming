@@ -1,0 +1,13 @@
+cradle:
+  stack:
+    - path: "./src"
+      component: "probprog:lib"
+
+    - path: "./app/Probprog.hs"
+      component: "probprog:exe:probprog-exe"
+
+    - path: "./app/Paths_probprog.hs"
+      component: "probprog:exe:probprog-exe"
+
+    - path: "./test"
+      component: "probprog:test:probprog-test"
