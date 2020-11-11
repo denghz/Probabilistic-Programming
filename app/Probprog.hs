@@ -34,6 +34,8 @@ eval (Apply f es) env =
 
 eval (Lambda xs e1) env = abstract xs e1 env
 
+eval (Pair (x, y)) env = PairVal (eval x env, eval y env)
+
 eval e _ =
   error ("can't evaluate " ++ show e)
 
@@ -98,6 +100,9 @@ obey :: Phrase -> Env -> (String, Env)
 
 obey (Calculate dist) env =
   (print_value ("dist"), env)
+
+obey (Evaluate exp) env = 
+  (print_value (eval exp env), env)
 
 obey (Define def) env =
   let x = def_lhs def in

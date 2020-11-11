@@ -1,7 +1,8 @@
 module Syntax where
 
 data Phrase =                 
-    Calculate Dist            
+    Calculate Dist
+  | Evaluate Expr            
   | Define Defn               
   deriving Show
 
