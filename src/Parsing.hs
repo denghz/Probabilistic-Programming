@@ -4,7 +4,7 @@ module Parsing(nextch, switch, star, incln, make_kwlookup,
     scan, eat, (<+>), p_fail, p_list0, p_list,
     print_value, print_defn, primwrap,
     dialog, dialogm, printStrLn, showlist, joinwith, lex_string, parse, 
-    Parser, Syntax) where
+    Lexer, Parser, Syntax) where
 
 import Environment
 import qualified Data.Map as Map
