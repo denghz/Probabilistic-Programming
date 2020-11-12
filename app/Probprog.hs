@@ -56,19 +56,18 @@ eval (Pair (x, y)) env =
     yv <- eval y env
     return (PairVal (xv, yv))
 
-
 eval (Loop bs1 e1 e2 bs2) env = 
   do 
     env' <- elabBinds bs1 env
     u env'
-
   where
-    elabBinds [] env = return env
-    elabBinds ((x, e):bs) env =
+    elabBinds bs env = 
       do 
-        env' <- elab (Val x e) env
-        elabBinds bs env'
-    
+        vs <- evalargs es env
+        return (foldr (\(x,v) env -> define env x v) env $ zip xs vs)
+      where 
+        (xs, es) = unzip bs
+        
     u env =
       do 
         b <- eval e1 env

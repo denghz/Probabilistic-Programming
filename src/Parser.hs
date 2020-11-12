@@ -7,7 +7,7 @@ data Token =
     IDENT IdKind Ident | NUMBER Double
   | IF | THEN | ELSE | LET  | LOOP | SCORE | RETURN | IN
   | LPAR | RPAR | COMMA | EQUAL | SEMI | MINUS | LAMBDA
-  | BRA | KET | LBRACE | RBRACE | SLASH | TILDE
+  | BRA | KET | LBRACE | RBRACE | SLASH | TILDE | DO | GET
   | BADTOK Char
   deriving Eq
 
@@ -20,7 +20,7 @@ instance Show Token where
     case t of 
       IDENT _ x -> show x; NUMBER n -> show n; 
       IF -> "if"; THEN -> "then"; ELSE -> "else"; 
-      LET -> "let"; LOOP -> "loop"; 
+      LET -> "let"; LOOP -> "loop"; GET -> "get"; DO -> "do"
       SCORE -> "score"; RETURN -> "return"; IN -> "in"; 
       LPAR -> "("; RPAR -> ")"; COMMA -> ","
       EQUAL -> "="; SEMI -> ";";  MINUS -> "-";
@@ -31,8 +31,9 @@ instance Show Token where
 kwlookup :: String -> Token
 kwlookup = 
   make_kwlookup (IDENT ID)
-    [("if", IF), ("then", THEN), ("else", ELSE), ("let", LET), ("in", IN)
-    , ("loop", LOOP), ("score", SCORE), ("return", RETURN), ("lambda", LAMBDA),
+    [("if", IF), ("then", THEN), ("else", ELSE), ("let", LET), 
+    ("in", IN), ("loop", LOOP), ("score", SCORE), ("do", DO),
+    ("return", RETURN), ("lambda", LAMBDA), ("get", GET),
     ("Roll", IDENT D "Roll"), ("WRoll", IDENT D "WRoll"),
     ("Uniform", IDENT D "Uniform"), ("Normal", IDENT D "Normal")]
 
@@ -123,10 +124,9 @@ p_buildInDist =
   do 
     d <- p_ident D
     case d of 
-      "Roll" -> do eat LPAR; e <- p_expr; eat RPAR; return $ DZ $ Roll e
-      "WRoll" -> do 
-                    eat LPAR;ps <- p_list0 p_pair COMMA
-                    return $ DZ $ WRoll ps
+      "Roll" -> do eat LPAR; e <- p_expr; eat RPAR; return (DZ $ Roll e)
+      "WRoll" -> do eat LPAR;ps <- p_list0 p_pair COMMA
+                    return (DZ $ WRoll ps)
       "Uniform" -> DR . Uniform <$> p_pair
       "Normal" -> DR . Normal <$> p_pair
       _ -> p_fail
@@ -137,8 +137,8 @@ p_expr =
       eat ELSE; If e1 e2 <$> p_expr
   <+> do eat LAMBDA; xs <- p_formals; 
           Lambda xs <$> p_expr
-  <+> do eat LOOP; bs1 <- p_loopBinds; e1 <- p_expr; 
-          e2 <- p_expr; Loop bs1 e1 e2 <$> p_loopBinds
+  <+> do eat LOOP; bs1 <- p_loopBinds; e1 <- p_expr; eat GET;
+          e2 <- p_expr; eat DO; Loop bs1 e1 e2 <$> p_loopBinds
   <+> p_term5
 
 p_loopBinds :: Parser Token [(Ident, Expr)]
@@ -169,7 +169,7 @@ p_opchainl p_op p_rand =
   do e0 <- p_rand; p_tail e0
   where
     p_tail e1 =
-      do w <- p_op; e2 <- p_rand; p_tail $ Apply (Variable w) [e1, e2]
+      do w <- p_op; e2 <- p_rand; p_tail (Apply (Variable w) [e1, e2])
       <+> return e1
 
 p_opchainr :: Parser t Ident -> Parser t Expr -> Parser t Expr
@@ -189,7 +189,7 @@ p_chainr mk p_op p_rand =
 
 p_term1 :: Parser Token Expr
 p_term1 =
-  do w <- p_monop; e <- p_term1; return $ Apply (Variable w) [e]
+  do w <- p_monop; e <- p_term1; return (Apply (Variable w) [e])
   <+> p_term0
 
 p_monop :: Parser Token Ident
@@ -200,7 +200,7 @@ p_term0 =
   do e0 <- p_primary; p_qualifiers e0
   where
     p_qualifiers e1 =
-      do aps <- p_actuals; p_qualifiers $ Apply e1 aps
+      do aps <- p_actuals; p_qualifiers (Apply e1 aps)
       <+> return e1
 
 p_actuals :: Parser Token [Expr]
