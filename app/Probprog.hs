@@ -3,11 +3,23 @@ import Parsing ( dialog, primwrap, print_defn, print_value )
 import Syntax
 import Parser
 import Environment
+import Control.Monad(liftM, ap)
 
+type Ans = (String, Env)
+newtype M a = Mk ((a -> Ans) -> Ans)
+
+applyK (Mk mx) = mx 
+
+instance Monad M where
+  return x = Mk (\k ->k x)
+  xm >>= f = Mk (\k -> applyK xm (\x -> applyK (f x) k)) 
+
+instance Functor M where fmap = liftM
+instance Applicative M where pure = return; (<*>) = ap
 data Value =
     Real Double       
   | BoolVal Bool      -- Booleans
-  | Function ([Value] -> Value)         -- Functions
+  | Function ([Value] -> M Value)         -- Functions
   | Nil               -- Empty list
   | Cons Value Value  -- Non-empty lists
   | PDF (Double -> Double)
@@ -16,43 +28,85 @@ data Value =
 -- An environment is a map from identifiers to values
 type Env = Environment Value
 
-eval :: Expr -> Env -> Value
+eval :: Expr -> Env -> M Value
 
-eval (Number n) _ = Real n
+eval (Number n) _ = return (Real n)
 
-eval (Variable x) env = find env x
+eval (Variable x) env = return (find env x)
 
 eval (If e1 e2 e3) env =
-  case eval e1 env of
-    BoolVal True -> eval e2 env
-    BoolVal False -> eval e3 env
-    _ -> error "boolean required in conditional"
+  do 
+    b <- eval e1 env
+    case b of
+      BoolVal True -> eval e2 env
+      BoolVal False -> eval e3 env
+      _ -> error "boolean required in conditional"
 
 eval (Apply f es) env =
-  apply (eval f env) (map ev es)
-    where ev e1 = eval e1 env
+  do
+    fv <- eval f env
+    args <- evalargs es env
+    apply fv args
 
-eval (Lambda xs e1) env = abstract xs e1 env
+eval (Lambda xs e1) env = return (abstract xs e1 env)
 
-eval (Pair (x, y)) env = PairVal (eval x env, eval y env)
+eval (Pair (x, y)) env = 
+  do
+    xv <- eval x env
+    yv <- eval y env
+    return (PairVal (xv, yv))
+
+
+eval (Loop bs1 e1 e2 bs2) env = 
+  do 
+    env' <- elabBinds bs1 env
+    u env'
+
+  where
+    elabBinds [] env = return env
+    elabBinds ((x, e):bs) env =
+      do 
+        env' <- elab (Val x e) env
+        elabBinds bs env'
+    
+    u env =
+      do 
+        b <- eval e1 env
+        case b of
+          BoolVal False -> do env' <- elabBinds bs2 env; u env'
+          BoolVal True -> eval e2 env
+          _ -> error "boolean required in while loop"
+
+
 
 eval e _ =
   error ("can't evaluate " ++ show e)
 
-apply :: Value -> [Value] -> Value
+apply :: Value -> [Value] -> M Value
 apply (Function f) args = f args
 apply _ _ = error "applying a non-function"
 
+evalargs :: [Expr] -> Env -> M [Value]
+evalargs [] _ = return []
+evalargs (e:es) env =
+  do
+    v <- eval e env
+    vs <- evalargs es env
+    return (v:vs)
+
 abstract :: [Ident] -> Expr -> Env -> Value
 abstract xs e env = 
-  Function (\args -> eval e (defargs env xs args))
+  Function (eval e . defargs env xs)
 
-elab :: Bind -> Env -> Env
-elab (Val x e) env = define env x (eval e env)
-elab (Samp x d) env = define env x (PDF (\_ -> 0))
+elab :: Bind -> Env -> M Env
+elab (Val x e) env = 
+  do 
+    v <- eval e env
+    return (define env x v)
+elab (Samp x d) env = return (define env x (PDF (\_ -> 0)))
 
-elabDist :: Defn -> Env -> Env
-elabDist (Prob x d) env = define env x (PDF (\_ -> 0))
+elabDist :: Defn -> Env -> M Env
+elabDist (Prob x d) env = return (define env x (PDF (\_ -> 0)))
 
 init_env :: Env
 init_env = 
@@ -75,7 +129,8 @@ init_env =
     pureprim "fst" (\[PairVal p] -> fst p),
     pureprim "snd" (\[PairVal p] -> snd p)]
   where constant x v = (x, v)
-        pureprim x f = (x, Function (primwrap x f))
+        primitive x f = (x, Function (primwrap x f))
+        pureprim x f = primitive x (return . f)
 
 instance Eq Value where
   Real a == Real b = a == b
@@ -102,12 +157,11 @@ obey (Calculate dist) env =
   (print_value ("dist"), env)
 
 obey (Evaluate exp) env = 
-  (print_value (eval exp env), env)
+  applyK (eval exp env) (\v -> (print_value v, env))
 
 obey (Define def) env =
   let x = def_lhs def in
-  let env' = elabDist def env in
-  (print_defn env' x, env')
+  applyK (elabDist def env) (\env' -> (print_defn env' x, env'))
 
 
 main = dialog parser obey init_env

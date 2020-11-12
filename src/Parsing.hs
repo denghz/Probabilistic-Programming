@@ -16,7 +16,7 @@ import System.IO(stdout, stderr, hPutStrLn, hFlush)
 import System.IO.Unsafe(unsafePerformIO)
 import System.Posix(installHandler, sigINT, Handler(Catch))
 import Control.Monad(liftM, ap)
-  
+import Data.Foldable(forM_)
 type LineNumber = Int
 
 data LexState = MkLexState String LineNumber
@@ -29,7 +29,7 @@ token_of (MkLexTok t _) = t
 newtype Lexer t = MkLexer (LexState -> Maybe (LexTok t, LexState))
 
 runLexer :: Lexer t -> LexState -> Maybe (LexTok t, LexState)
-runLexer (MkLexer g) st = g st
+runLexer (MkLexer g) = g
 
 instance Monad Lexer where
   return x = 
@@ -87,9 +87,9 @@ lex_string lexer n s = loop (MkLexState s n)
 
 make_kwlookup :: (String -> t) -> [(String, t)] -> String -> t
 make_kwlookup deflt table =
-  (\s -> case Map.lookup s kwtable of 
+  \s -> case Map.lookup s kwtable of 
             Just k -> k; 
-            Nothing -> deflt s)
+            Nothing -> deflt s
   where kwtable = Map.fromList table
 
 data LexBuf t = MkLexBuf Int [LexTok t] [LexTok t] Int
@@ -197,7 +197,7 @@ type Syntax t a = (Lexer t, Parser t a)
 
 dialog :: (Eq t, Show t) => 
   Syntax t a -> (a -> s -> (String, s)) -> s -> IO ()
-dialog syntax obey init = dialogm syntax obey' init
+dialog syntax obey = dialogm syntax obey'
   where 
     obey' e s = 
       let (out, s') = obey e s in do printStrLn out; return s'
@@ -223,17 +223,15 @@ parse (lexer,parser) s =
 
 read_eval_print :: (Show t) => 
   Syntax t a -> (a -> s -> IO s) -> s -> IO ()
-read_eval_print (lexer, parser) obey st0 = listen st0
+read_eval_print (lexer, parser) obey = listen
   where
     listen st = 
       let parse = runParser parser (initbuf []) in
       do 
         trap_interrupts
         stz <- execute (loop 1 parse) st (Just st)
-        case stz of
-          Just st' -> listen st'
-          Nothing -> return ()  
-
+        Data.Foldable.forM_ stz listen
+        
     loop n result st =
       case result of
         Success x _ ->
@@ -305,7 +303,7 @@ print_value v = (\v -> "--> " ++ show v) $! v
 
 print_defn :: Show d => Environment d -> String -> String
 print_defn env x = 
-  (\v -> "--- " ++ x ++ " = " ++ show v) $! (find env x)
+  (\v -> "--- " ++ x ++ " = " ++ show v) $! find env x
 
 printStrLn :: String -> IO ()
 printStrLn "" = putChar '\n'
@@ -325,7 +323,7 @@ showlist :: Show a => [a] -> String
 showlist = joinwith ", " . map show
 
 joinwith :: String -> [String] -> String
-joinwith sep = concat . List.intersperse sep
+joinwith = List.intercalate
 
 
 instance Functor Lexer where fmap = liftM
