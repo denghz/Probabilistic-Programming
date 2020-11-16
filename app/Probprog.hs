@@ -1,5 +1,5 @@
 module Probprog(main,eval,init_env) where
-import Parsing ( dialog, primwrap, print_defn, print_value )
+import Parsing (dialog, primwrap, print_defn, print_value)
 import Syntax
 import Parser
 import Environment
@@ -22,7 +22,7 @@ data Value =
   | Function ([Value] -> M Value)         -- Functions
   | Nil               -- Empty list
   | Cons Value Value  -- Non-empty lists
-  | PDF (Double -> Double)
+  | PDF String
   | PairVal (Value, Value)
 
 -- An environment is a map from identifiers to values
@@ -76,8 +76,6 @@ eval (Loop bs1 e1 e2 bs2) env =
           BoolVal True -> eval e2 env
           _ -> error "boolean required in while loop"
 
-
-
 eval e _ =
   error ("can't evaluate " ++ show e)
 
@@ -102,10 +100,10 @@ elab (Val x e) env =
   do 
     v <- eval e env
     return (define env x v)
-elab (Samp x d) env = return (define env x (PDF (\_ -> 0)))
+elab (Samp x d) env = return $ define env x (PDF $ show d)
 
 elabDist :: Defn -> Env -> M Env
-elabDist (Prob x d) env = return (define env x (PDF (\_ -> 0)))
+elabDist (Prob x d) env = return $ define env x (PDF $ show d)
 
 init_env :: Env
 init_env = 
@@ -156,6 +154,7 @@ obey (Calculate dist) env =
   (print_value ("dist"), env)
 
 obey (Evaluate exp) env = 
+
   applyK (eval exp env) (\v -> (print_value v, env))
 
 obey (Define def) env =

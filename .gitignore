@@ -1,2 +1,4 @@
 .stack-work/
 *~
+dist/cabal-config-flags
+dist/setup-config
