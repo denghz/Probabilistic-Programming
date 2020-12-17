@@ -7,6 +7,7 @@ module Parsing(nextch, switch, star, incln, make_kwlookup,
     Lexer, Parser, Syntax) where
 
 import Environment
+import Data.Maybe(fromMaybe)
 import qualified Data.Map as Map
 import qualified Data.List as List
 import qualified Control.Exception
@@ -87,10 +88,8 @@ lex_string lexer n s = loop (MkLexState s n)
 
 make_kwlookup :: (String -> t) -> [(String, t)] -> String -> t
 make_kwlookup deflt table =
-  \s -> case Map.lookup s kwtable of 
-            Just k -> k; 
-            Nothing -> deflt s
-  where kwtable = Map.fromList table
+  \s -> fromMaybe (deflt s) (Map.lookup s kwtable)
+    where kwtable = Map.fromList table
 
 data LexBuf t = MkLexBuf Int [LexTok t] [LexTok t] Int
 
@@ -169,7 +168,6 @@ scan =
       ks (token_of (peekb buf)) (forward buf))
 
 infixr 5 <+>
-
 (<+>) :: Parser t a -> Parser t a -> Parser t a
 p <+> q =
   MkParser (\buf ks kf km -> 

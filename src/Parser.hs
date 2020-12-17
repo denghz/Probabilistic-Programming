@@ -95,10 +95,10 @@ p_def =
 p_bind :: Parser Token Bind
 p_bind = 
   do (x, e) <- p_eqn; return $ Val x e
-  <+> do (x, d) <- p_samp; return $ Samp x d
+  <+> do (x, d) <- p_rand; return $ Rand x d
 
-p_samp :: Parser Token (Ident, Dist)
-p_samp = 
+p_rand :: Parser Token (Ident, Dist)
+p_rand = 
   do x <- p_name; eat TILDE; d <- p_dist; return (x,d)
 
 
@@ -124,11 +124,11 @@ p_buildInDist =
   do 
     d <- p_ident D
     case d of 
-      "Roll" -> do eat LPAR; e <- p_expr; eat RPAR; return (DZ $ Roll e)
-      "WRoll" -> do eat LPAR;ps <- p_list0 p_pair COMMA
-                    return (DZ $ WRoll ps)
-      "Uniform" -> DR . Uniform <$> p_pair
-      "Normal" -> DR . Normal <$> p_pair
+      "Roll" -> do eat LPAR; e <- p_expr; eat RPAR; return (PrimD "Roll" [e])
+      "WRoll" -> do eat LPAR;ps <- p_list0 p_pair COMMA; eat RPAR;
+                    return (PrimD "WRoll" ps)
+      "Uniform" -> PrimD "Uniform" . (:[]) <$> p_pair
+      "Normal" -> PrimD "Normal" . (:[]) <$> p_pair
       _ -> p_fail
 
 p_expr :: Parser Token Expr
@@ -212,13 +212,13 @@ p_primary =
   (Number <$> p_number)
   <+> (Variable <$> p_name)
   <+> do eat LPAR; e <- p_expr; eat RPAR; return e
-  <+> (Pair <$> p_pair)
+  <+> p_pair
 
-p_pair :: Parser Token (Expr, Expr)
+p_pair :: Parser Token Expr
 p_pair =
   do eat LPAR; e1 <- p_expr; eat COMMA
      e2 <- p_expr; eat RPAR
-     return (e1, e2)
+     return $ Pair (e1, e2)
 
 p_number :: Parser Token Double
 p_number =

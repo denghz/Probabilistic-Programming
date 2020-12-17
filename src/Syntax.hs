@@ -8,18 +8,9 @@ data Phrase =
 
 data Dist = 
     Return Expr
-  | DZ DZ
-  | DR DR
+  | PrimD Ident [Expr]
   | Let Bind Dist
   | Score Expr Dist
-  deriving Show
-
-data DZ = 
-  Roll Expr | WRoll [(Expr, Expr)]
-  deriving Show
-
-data DR = 
-  Uniform (Expr,Expr) | Normal (Expr, Expr)
   deriving Show
 
 data Expr =                  
@@ -39,7 +30,7 @@ data Defn =
 
 data Bind =
     Val Ident Expr
-  | Samp Ident Dist
+  | Rand Ident Dist
   deriving Show
 
 type Ident = String

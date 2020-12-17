@@ -1,5 +1,5 @@
 module Probprog(main,eval,init_env) where
-import Parsing (dialog, primwrap, print_defn, print_value)
+import Parsing(dialog, primwrap, print_defn, print_value)
 import Syntax
 import Parser
 import Environment
@@ -22,11 +22,45 @@ data Value =
   | Function ([Value] -> M Value)         -- Functions
   | Nil               -- Empty list
   | Cons Value Value  -- Non-empty lists
-  | PDF String
+  | PDF Dist  -- Since we cannot evaluate it now, we add it as a value
+  | NotDetermined Ident-- value cannot be determined yet
   | PairVal (Value, Value)
 
 -- An environment is a map from identifiers to values
 type Env = Environment Value
+
+freeVars :: Env -> Expr -> [Ident]
+freeVars env (Variable x) = 
+  case maybe_find env x of
+    Just _ -> []
+    Nothing -> [x]
+freeVars env (If e1 e2 e3) = freeVars env e1 ++ freeVars env e2 ++ freeVars env e3
+freeVars env (Apply f es) = freeVars env f ++ concatMap (freeVars env) es
+freeVars env (Pair (x, y)) = freeVars env x ++ freeVars env y
+freeVars env (Loop bs1 e1 e2 bs2) =
+  concatMap (freeVars env) es1 ++ freeVars env' e1 ++ freeVars env' e2 ++ concatMap (freeVars env) es2
+  where 
+    (xs1, es1) = unzip bs1
+    (xs2, es2) = unzip bs2
+    env' = foldr (\(x,v) env -> define env x v) env (zip xs1 $ replicate (length xs1) (Real 0))
+freeVars _ _ = []
+
+notDeterVars :: Env -> Expr -> [Ident]
+notDeterVars env (Variable x) = 
+  case find env x of
+    NotDetermined _ -> [x]
+    _ -> []
+notDeterVars env (If e1 e2 e3) = notDeterVars env e1 ++ notDeterVars env e2 ++ notDeterVars env e3
+notDeterVars env (Apply f es) = notDeterVars env f ++ concatMap (notDeterVars env) es
+notDeterVars env (Pair (x, y)) = notDeterVars env x ++ notDeterVars env y
+notDeterVars env (Loop bs1 e1 e2 bs2) =
+  concatMap (notDeterVars env) es1 ++ notDeterVars env' e1 ++ notDeterVars env' e2 ++ concatMap (notDeterVars env) es2
+  where 
+    (xs1, es1) = unzip bs1
+    (xs2, es2) = unzip bs2
+    env' = foldr (\(x,v) env -> define env x v) env (zip xs1 $ replicate (length xs1) (Real 0))
+notDeterVars _ _ = []
+
 
 eval :: Expr -> Env -> M Value
 
@@ -79,6 +113,67 @@ eval (Loop bs1 e1 e2 bs2) env =
 eval e _ =
   error ("can't evaluate " ++ show e)
 
+partialEval :: Env -> Expr -> M Expr
+partialEval env e = 
+  if null (notDeterVars env e) then 
+    do v <- eval e env
+       case v of
+         Function _ -> return e -- e is a built in function
+         _ -> return (valToTree v)
+  else partialEval' env e
+
+
+valToTree :: Value -> Expr
+valToTree (Real n) = Number n
+valToTree (BoolVal True) = Apply (Variable "=") [Number 0, Number 0]
+valToTree (BoolVal False) = Apply (Variable "=") [Number 0, Number 1]
+valToTree Nil = Variable "nil"
+valToTree (Cons v1 v2) = Apply (Variable ":") [valToTree v1, valToTree v2]
+valToTree (PairVal (v1, v2)) =  Pair (valToTree v1, valToTree v2)
+valToTree v = error ("\ncannot convert the value back to Syntax Tree, " ++ show v)
+
+
+partialEval' :: Env -> Expr -> M Expr 
+partialEval' env (If e1 e2 e3) = 
+  if null (notDeterVars env e1) then
+    do
+      b <- eval e1 env
+      case b of
+        BoolVal True -> partialEval env e2
+        BoolVal False -> partialEval env e3
+        _ -> error "boolean required in conditional"
+  else
+    do 
+      t1 <- partialEval env e1
+      t2 <- partialEval env e2
+      t3 <- partialEval env e3
+      return (If t1 t2 t3)
+partialEval' env (Apply f es) =
+  do
+    fv <- eval f env
+    args <- mapM (partialEval env) es
+    return (Apply f args)
+
+partialEval' env (Pair (x, y)) = 
+  do
+    x' <- partialEval env x
+    y' <- partialEval env y
+    return $ Pair (x', y')
+
+partialEval' env (Loop bs1 e1 e2 bs2) = 
+  do
+    ts1 <- mapM (partialEval env) es1
+    t1 <- partialEval env' e1
+    t2 <- partialEval env' e2
+    ts2 <- mapM (partialEval env') es2
+    return (Loop (zip xs1 ts1) t1 t2 (zip xs2 ts2))
+  where
+    (xs1, es1) = unzip bs1
+    (xs2, es2) = unzip bs2
+    env' = foldr (\(x,v) env -> define env x v) env (zip xs1 $ map NotDetermined xs1)
+
+partialEval' _ e = return e
+
 apply :: Value -> [Value] -> M Value
 apply (Function f) args = f args
 apply _ _ = error "applying a non-function"
@@ -100,10 +195,39 @@ elab (Val x e) env =
   do 
     v <- eval e env
     return (define env x v)
-elab (Samp x d) env = return $ define env x (PDF $ show d)
+elab (Rand x d) env = return (define env x (NotDetermined x))
 
 elabDist :: Defn -> Env -> M Env
-elabDist (Prob x d) env = return $ define env x (PDF $ show d)
+elabDist (Prob x d) env = 
+  do d' <- standardise d env
+     return $ define env x (PDF d')
+
+standardise :: Dist -> Env -> M Dist
+standardise (Let b d) env = 
+  do env' <- elab b env; 
+     d' <- standardise d env'
+     return $ if isDBind b then d' else Let b d'
+  where isDBind (Val _ _) = True
+        isDBind (Rand _ _ ) = False
+    
+standardise (Score e d) env = 
+  do d' <- standardise d env
+     t <- partialEval env e
+     return (Score t d')
+
+standardise (Return e) env = 
+  do t <- partialEval env e; return (Return t)
+
+standardise (PrimD x es) env =
+  do ts <- mapM (partialEval env) es; 
+     return $ Let (Rand z $ PrimD x ts) (Return $ Variable z)
+  where z = newIdent env
+
+newIdent :: Env -> Ident
+newIdent env = head $ filter (\x -> x `notElem` names env) allStrings
+  where
+    allStrings = [c:s | s <- "":allStrings, c <- ['a'..'z'] ++ ['0'..'9']] 
+
 
 init_env :: Env
 init_env = 
@@ -147,19 +271,20 @@ instance Show Value where
       shtail (Cons h t) = ", " ++ show h ++ shtail t
       shtail x = " . " ++ show x
   show (Function _) = "<function>"
+  show (PDF d) = show d
+  show (PairVal (x,y)) = show (x,y)
 
 obey :: Phrase -> Env -> (String, Env)
 
 obey (Calculate dist) env =
-  (print_value ("dist"), env)
+  applyK (standardise dist env) (\v -> (print_value v, env))
 
 obey (Evaluate exp) env = 
-
   applyK (eval exp env) (\v -> (print_value v, env))
 
 obey (Define def) env =
   let x = def_lhs def in
-  applyK (elabDist def env) (\env' -> (print_defn env' x, env'))
+  applyK (elabDist def env) (\env -> (print_defn env x, env))
 
 
 main = dialog parser obey init_env

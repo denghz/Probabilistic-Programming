@@ -2,7 +2,7 @@ module Environment(Environment, empty_env, find, maybe_find,
            define, defargs, make_env, names, within) where
 
 import qualified Data.Map as Map
-
+import Data.Maybe(fromMaybe)
 type Ident = String
 
 newtype Environment v = Env (Map.Map Ident v) deriving Show
@@ -11,10 +11,7 @@ empty_env :: Environment v
 empty_env = Env Map.empty
 
 find :: Environment v -> Ident -> v
-find (Env m) x =
-  case Map.lookup x m of
-    Just v -> v
-    Nothing -> error (show x ++ " is not defined")
+find (Env m) x = fromMaybe (error $ show x ++ " is not defined") (Map.lookup x m)
 
 maybe_find :: Environment v -> Ident -> Maybe v
 maybe_find (Env m) x = Map.lookup x m
