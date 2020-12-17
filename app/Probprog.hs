@@ -29,22 +29,6 @@ data Value =
 -- An environment is a map from identifiers to values
 type Env = Environment Value
 
-freeVars :: Env -> Expr -> [Ident]
-freeVars env (Variable x) = 
-  case maybe_find env x of
-    Just _ -> []
-    Nothing -> [x]
-freeVars env (If e1 e2 e3) = freeVars env e1 ++ freeVars env e2 ++ freeVars env e3
-freeVars env (Apply f es) = freeVars env f ++ concatMap (freeVars env) es
-freeVars env (Pair (x, y)) = freeVars env x ++ freeVars env y
-freeVars env (Loop bs1 e1 e2 bs2) =
-  concatMap (freeVars env) es1 ++ freeVars env' e1 ++ freeVars env' e2 ++ concatMap (freeVars env) es2
-  where 
-    (xs1, es1) = unzip bs1
-    (xs2, es2) = unzip bs2
-    env' = foldr (\(x,v) env -> define env x v) env (zip xs1 $ replicate (length xs1) (Real 0))
-freeVars _ _ = []
-
 notDeterVars :: Env -> Expr -> [Ident]
 notDeterVars env (Variable x) = 
   case find env x of
