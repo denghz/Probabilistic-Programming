@@ -2,8 +2,7 @@
 
 module Parsing(nextch, switch, star, incln, make_kwlookup,
     scan, eat, (<+>), p_fail, p_list0, p_list,
-    print_value, print_defn, primwrap,
-    dialog, dialogm, printStrLn, showlist, joinwith, lex_string, parse, 
+    print_value, print_defn, dialog, dialogm, printStrLn, showlist, joinwith, lex_string, parse, 
     Lexer, Parser, Syntax) where
 
 import Environment
@@ -306,16 +305,6 @@ print_defn env x =
 printStrLn :: String -> IO ()
 printStrLn "" = putChar '\n'
 printStrLn (c:s) = do putChar c; hFlush stdout; printStrLn s
-
-primwrap :: Show a => String -> ([a] -> b) -> [a] -> b
-primwrap prim f args =
-  unsafePerformIO 
-    (Control.Exception.catch (return $! f args) match_fail)
-  where 
-    match_fail :: Control.Exception.PatternMatchFail -> b
-    match_fail _ = 
-      error ("bad arguments to primitive " ++ prim ++ ": " 
-            ++ showlist args)
 
 showlist :: Show a => [a] -> String
 showlist = joinwith ", " . map show

@@ -6,7 +6,7 @@ import Data.Char
 data Token = 
     IDENT IdKind Ident | NUMBER Double
   | IF | THEN | ELSE | LET  | LOOP | SCORE | RETURN | IN
-  | LPAR | RPAR | COMMA | EQUAL | SEMI | MINUS | LAMBDA
+  | LPAR | RPAR | COMMA | EQUAL | SEMI | MINUS
   | BRA | KET | LBRACE | RBRACE | TILDE | DO | GET
   | BADTOK Char
   deriving Eq
@@ -33,7 +33,7 @@ kwlookup =
   make_kwlookup (IDENT ID)
     [("if", IF), ("then", THEN), ("else", ELSE), ("let", LET), 
     ("in", IN), ("loop", LOOP), ("score", SCORE), ("do", DO),
-    ("return", RETURN), ("lambda", LAMBDA), ("get", GET),
+    ("return", RETURN), ("get", GET),
     ("Roll", IDENT D "Roll"), ("WRoll", IDENT D "WRoll"),
     ("Uniform", IDENT D "Uniform"), ("Normal", IDENT D "Normal")]
 
@@ -105,8 +105,7 @@ p_rand =
 p_eqn :: Parser Token (Ident, Expr)
 p_eqn =
   do x <- p_name; eat EQUAL; e <- p_expr; return (x, e)
-  <+> do x <- p_name; xs <- p_formals; 
-         eat EQUAL; e <- p_expr; return (x, Lambda xs e)
+
 
 p_formals :: Parser Token [Ident]
 p_formals = p_lrpar $ p_list0 p_name COMMA
@@ -134,8 +133,6 @@ p_expr :: Parser Token Expr
 p_expr = 
   do eat IF; e1 <- p_expr; eat THEN; e2 <- p_expr;
       eat ELSE; If e1 e2 <$> p_expr
-  <+> do eat LAMBDA; xs <- p_formals; 
-          Lambda xs <$> p_expr
   <+> do eat LOOP; bs1 <- p_loopBinds; e1 <- p_expr; eat GET;
           e2 <- p_expr; eat DO; Loop bs1 e1 e2 <$> p_loopBinds
   <+> p_term5

@@ -1,5 +1,5 @@
 module Probprog(main,eval,init_env) where
-import Parsing(dialog, primwrap, print_defn, print_value)
+import Parsing(dialog, print_defn, print_value)
 import Syntax
 import Parser
 import Environment
@@ -65,8 +65,6 @@ eval env (Apply f es) =
     fv <- eval env f 
     args <- mapM (eval env) es
     apply fv args
-
-eval env (Lambda xs e1)  = return (abstract xs e1 env)
 
 eval env (Pair (x, y))  = 
   do
@@ -162,10 +160,6 @@ apply :: Value -> [Value] -> M Value
 apply (Function f) args = f args
 apply _ _ = error "applying a non-function"
 
-abstract :: [Ident] -> Expr -> Env -> Value
-abstract xs e env = 
-  Function (flip eval e . defargs env xs)
-
 elab :: Bind -> Env -> M Env
 elab (Val x e) env = 
   do 
@@ -225,9 +219,14 @@ init_env =
     pureprim "tail" (\ [Cons _ t] -> t),
     pureprim ":" (\ [a, b] -> Cons a b),
     pureprim "fst" (\[PairVal p] -> fst p),
-    pureprim "snd" (\[PairVal p] -> snd p)]
+    pureprim "snd" (\[PairVal p] -> snd p),
+    pureprim "sin" (\[Real a] -> Real $ sin a),
+    pureprim "cos" (\[Real a] -> Real $ cos a),
+    pureprim "tan" (\[Real a] -> Real $ tan a),
+    pureprim "exp" (\[Real a] -> Real $ exp a),
+    pureprim "log" (\[Real a] -> Real $ log a)]
   where constant x v = (x, v)
-        primitive x f = (x, Function (primwrap x f))
+        primitive x f = (x, Function f)
         pureprim x f = primitive x (return . f)
 
 instance Eq Value where

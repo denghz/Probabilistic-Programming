@@ -17,8 +17,7 @@ data Expr =
     Number Double            
   | If Expr Expr Expr         
   | Variable Ident            
-  | Apply Expr [Expr]         
-  | Lambda [Ident] Expr   
+  | Apply Expr [Expr] 
   | Loop [(Ident, Expr)] Expr Expr [(Ident, Expr)]
   | Pair (Expr, Expr)
   | Empty                     
