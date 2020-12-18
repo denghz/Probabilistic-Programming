@@ -7,7 +7,7 @@ data Token =
     IDENT IdKind Ident | NUMBER Double
   | IF | THEN | ELSE | LET  | LOOP | SCORE | RETURN | IN
   | LPAR | RPAR | COMMA | EQUAL | SEMI | MINUS | LAMBDA
-  | BRA | KET | LBRACE | RBRACE | SLASH | TILDE | DO | GET
+  | BRA | KET | LBRACE | RBRACE | TILDE | DO | GET
   | BADTOK Char
   deriving Eq
 
@@ -25,7 +25,7 @@ instance Show Token where
       LPAR -> "("; RPAR -> ")"; COMMA -> ","
       EQUAL -> "="; SEMI -> ";";  MINUS -> "-";
       BRA -> "["; KET -> "]"; LBRACE -> "{"; 
-      RBRACE -> "}"; SLASH -> "/"; TILDE -> "~"
+      RBRACE -> "}"; TILDE -> "~"
       BADTOK c -> [c]
 
 kwlookup :: String -> Token
@@ -109,8 +109,7 @@ p_eqn =
          eat EQUAL; e <- p_expr; return (x, Lambda xs e)
 
 p_formals :: Parser Token [Ident]
-p_formals = 
-  do eat LPAR; xs <- p_list0 p_name COMMA; eat RPAR; return xs
+p_formals = p_lrpar $ p_list0 p_name COMMA
 
 p_dist :: Parser Token Dist
 p_dist =
@@ -124,8 +123,8 @@ p_buildInDist =
   do 
     d <- p_ident D
     case d of 
-      "Roll" -> do eat LPAR; e <- p_expr; eat RPAR; return (PrimD "Roll" [e])
-      "WRoll" -> do eat LPAR;ps <- p_list0 p_pair COMMA; eat RPAR;
+      "Roll" -> do e <- p_lrpar p_expr; return (PrimD "Roll" [e])
+      "WRoll" -> do ps <- p_lrpar $ p_list0 p_pair COMMA;
                     return (PrimD "WRoll" ps)
       "Uniform" -> PrimD "Uniform" . (:[]) <$> p_pair
       "Normal" -> PrimD "Normal" . (:[]) <$> p_pair
@@ -142,11 +141,8 @@ p_expr =
   <+> p_term5
 
 p_loopBinds :: Parser Token [(Ident, Expr)]
-p_loopBinds =
-  do 
-    eat LPAR; bs <- p_list0 p_bind COMMA
-    eat RPAR; return bs
-  where p_bind = do eat LPAR; x <- p_name; eat COMMA; e <- p_expr; eat RPAR; return (x,e)
+p_loopBinds = p_lrpar $ p_list0 p_bind COMMA
+  where p_bind = p_lrpar $ do x <- p_name; eat COMMA; e <- p_expr; return (x,e)
 
 p_term5 :: Parser Token Expr
 p_term5 = p_opchainl p_relop p_term4 
@@ -204,20 +200,19 @@ p_term0 =
       <+> return e1
 
 p_actuals :: Parser Token [Expr]
-p_actuals =
-  do eat LPAR; aps <- p_list0 p_expr COMMA; eat RPAR; return aps
+p_actuals = p_lrpar $ p_list0 p_expr COMMA
 
 p_primary :: Parser Token Expr
 p_primary = 
   (Number <$> p_number)
   <+> (Variable <$> p_name)
-  <+> do eat LPAR; e <- p_expr; eat RPAR; return e
+  <+> p_lrpar p_expr
   <+> p_pair
 
 p_pair :: Parser Token Expr
-p_pair =
-  do eat LPAR; e1 <- p_expr; eat COMMA
-     e2 <- p_expr; eat RPAR
+p_pair = p_lrpar $
+  do e1 <- p_expr; eat COMMA
+     e2 <- p_expr
      return $ Pair (e1, e2)
 
 p_number :: Parser Token Double
@@ -225,7 +220,7 @@ p_number =
   do t <- scan; case t of NUMBER n -> return n; _ -> p_fail
 
 p_name :: Parser Token Ident
-p_name = p_ident ID <+> do eat LPAR; x <- p_op; eat RPAR; return x
+p_name = p_ident ID <+> p_lrpar p_op
 
 p_op :: Parser Token Ident
 p_op =
@@ -234,6 +229,9 @@ p_op =
 p_ident :: IdKind -> Parser Token Ident
 p_ident k =
   do t <- scan; case t of IDENT k' x | k == k' -> return x; _ -> p_fail
+
+p_lrpar :: Parser Token t -> Parser Token t
+p_lrpar p = do eat LPAR; x <- p; eat RPAR; return x;
 
 parser :: Syntax Token Phrase
 parser = (lexer, p_phrase)

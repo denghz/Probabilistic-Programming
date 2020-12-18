@@ -23,7 +23,7 @@ data Value =
   | Nil               -- Empty list
   | Cons Value Value  -- Non-empty lists
   | PDF Dist  -- Since we cannot evaluate it now, we add it as a value
-  | NotDetermined Ident-- value cannot be determined yet
+  | NotDetermined Ident -- value cannot be determined yet
   | PairVal (Value, Value)
 
 -- An environment is a map from identifiers to values
@@ -46,52 +46,52 @@ notDeterVars env (Loop bs1 e1 e2 bs2) =
 notDeterVars _ _ = []
 
 
-eval :: Expr -> Env -> M Value
+eval :: Env -> Expr -> M Value
 
-eval (Number n) _ = return (Real n)
+eval _ (Number n)  = return (Real n)
 
-eval (Variable x) env = return (find env x)
+eval env (Variable x)  = return (find env x)
 
-eval (If e1 e2 e3) env =
+eval env (If e1 e2 e3)  =
   do 
-    b <- eval e1 env
+    b <- eval env e1 
     case b of
-      BoolVal True -> eval e2 env
-      BoolVal False -> eval e3 env
+      BoolVal True -> eval env e2 
+      BoolVal False -> eval env e3 
       _ -> error "boolean required in conditional"
 
-eval (Apply f es) env =
+eval env (Apply f es) =
   do
-    fv <- eval f env
-    args <- evalargs es env
+    fv <- eval env f 
+    args <- mapM (eval env) es
     apply fv args
 
-eval (Lambda xs e1) env = return (abstract xs e1 env)
+eval env (Lambda xs e1)  = return (abstract xs e1 env)
 
-eval (Pair (x, y)) env = 
+eval env (Pair (x, y))  = 
   do
-    xv <- eval x env
-    yv <- eval y env
+    xv <- eval env x 
+    yv <- eval env y 
     return (PairVal (xv, yv))
 
-eval (Loop bs1 e1 e2 bs2) env = 
+eval env (Loop bs1 e1 e2 bs2)  = 
   do 
-    env' <- elabBinds bs1 env
+    env' <- elabBinds env bs1 
     u env'
   where
-    elabBinds bs env = 
+    elabBinds env bs  = 
       do 
-        vs <- evalargs es env
+        vs <- mapM (eval env) es
         return (foldr (\(x,v) env -> define env x v) env $ zip xs vs)
       where 
         (xs, es) = unzip bs
         
     u env =
       do 
-        b <- eval e1 env
+        b <- eval env e1 
         case b of
-          BoolVal False -> do env' <- elabBinds bs2 env; u env'
-          BoolVal True -> eval e2 env
+          BoolVal False -> do env' <- elabBinds env bs2; u env'
+          BoolVal True -> eval env e2 
           _ -> error "boolean required in while loop"
 
 eval e _ =
@@ -100,7 +100,7 @@ eval e _ =
 partialEval :: Env -> Expr -> M Expr
 partialEval env e = 
   if null (notDeterVars env e) then 
-    do v <- eval e env
+    do v <- eval env e 
        case v of
          Function _ -> return e -- e is a built in function
          _ -> return (valToTree v)
@@ -121,7 +121,7 @@ partialEval' :: Env -> Expr -> M Expr
 partialEval' env (If e1 e2 e3) = 
   if null (notDeterVars env e1) then
     do
-      b <- eval e1 env
+      b <- eval env e1 
       case b of
         BoolVal True -> partialEval env e2
         BoolVal False -> partialEval env e3
@@ -134,7 +134,7 @@ partialEval' env (If e1 e2 e3) =
       return (If t1 t2 t3)
 partialEval' env (Apply f es) =
   do
-    fv <- eval f env
+    fv <- eval env f 
     args <- mapM (partialEval env) es
     return (Apply f args)
 
@@ -162,47 +162,39 @@ apply :: Value -> [Value] -> M Value
 apply (Function f) args = f args
 apply _ _ = error "applying a non-function"
 
-evalargs :: [Expr] -> Env -> M [Value]
-evalargs [] _ = return []
-evalargs (e:es) env =
-  do
-    v <- eval e env
-    vs <- evalargs es env
-    return (v:vs)
-
 abstract :: [Ident] -> Expr -> Env -> Value
 abstract xs e env = 
-  Function (eval e . defargs env xs)
+  Function (flip eval e . defargs env xs)
 
 elab :: Bind -> Env -> M Env
 elab (Val x e) env = 
   do 
-    v <- eval e env
+    v <- eval env e 
     return (define env x v)
 elab (Rand x d) env = return (define env x (NotDetermined x))
 
 elabDist :: Defn -> Env -> M Env
 elabDist (Prob x d) env = 
-  do d' <- standardise d env
+  do d' <- standardise env d 
      return $ define env x (PDF d')
 
-standardise :: Dist -> Env -> M Dist
-standardise (Let b d) env = 
+standardise :: Env -> Dist -> M Dist
+standardise env (Let b d)  = 
   do env' <- elab b env; 
-     d' <- standardise d env'
+     d' <- standardise env' d 
      return $ if isDBind b then d' else Let b d'
   where isDBind (Val _ _) = True
         isDBind (Rand _ _ ) = False
     
-standardise (Score e d) env = 
-  do d' <- standardise d env
+standardise env (Score e d)  = 
+  do d' <- standardise env d 
      t <- partialEval env e
      return (Score t d')
 
-standardise (Return e) env = 
+standardise env (Return e)  = 
   do t <- partialEval env e; return (Return t)
 
-standardise (PrimD x es) env =
+standardise env (PrimD x es) =
   do ts <- mapM (partialEval env) es; 
      return $ Let (Rand z $ PrimD x ts) (Return $ Variable z)
   where z = newIdent env
@@ -222,6 +214,7 @@ init_env =
     pureprim "-" (\ [Real a, Real b] -> Real (a - b)),
     pureprim "*" (\ [Real a, Real b] -> Real (a * b)),
     pureprim "~" (\ [Real a] -> Real (- a)),
+    pureprim "/" (\ [Real a, Real b] -> Real (a / b)),
     pureprim "<" (\ [Real a, Real b] -> BoolVal (a < b)),
     pureprim "<=" (\ [Real a, Real b] -> BoolVal (a <= b)),
     pureprim ">" (\ [Real a, Real b] -> BoolVal (a > b)),
@@ -261,10 +254,10 @@ instance Show Value where
 obey :: Phrase -> Env -> (String, Env)
 
 obey (Calculate dist) env =
-  applyK (standardise dist env) (\v -> (print_value v, env))
+  applyK (standardise env dist) (\v -> (print_value v, env))
 
 obey (Evaluate exp) env = 
-  applyK (eval exp env) (\v -> (print_value v, env))
+  applyK (eval env exp) (\v -> (print_value v, env))
 
 obey (Define def) env =
   let x = def_lhs def in
