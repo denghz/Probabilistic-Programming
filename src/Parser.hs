@@ -122,11 +122,11 @@ p_buildInDist =
   do 
     d <- p_ident D
     case d of 
-      "Roll" -> do e <- p_lrpar p_expr; return (PrimD "Roll" [e])
+      "Roll" -> do e <- p_lrpar p_expr; return (PrimD DZ "Roll" [e])
       "WRoll" -> do ps <- p_lrpar $ p_list0 p_pair COMMA;
-                    return (PrimD "WRoll" ps)
-      "Uniform" -> PrimD "Uniform" . (:[]) <$> p_pair
-      "Normal" -> PrimD "Normal" . (:[]) <$> p_pair
+                    return (PrimD DZ "WRoll" ps)
+      "Uniform" -> PrimD DR "Uniform" . (:[]) <$> p_pair
+      "Normal" -> PrimD DR "Normal" . (:[]) <$> p_pair
       _ -> p_fail
 
 p_expr :: Parser Token Expr

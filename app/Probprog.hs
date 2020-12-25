@@ -19,23 +19,24 @@ instance Applicative M where pure = return; (<*>) = ap
 data Value =
     Real Double       
   | BoolVal Bool      -- Booleans
-  | Function ([Value] -> M Value)         -- Functions
+  | Function Ident ([Value] -> M Value)         -- Functions
   | Nil               -- Empty list
   | Cons Value Value  -- Non-empty lists
-  | PDF Dist  -- Since we cannot evaluate it now, we add it as a value
-  | NotDetermined Ident -- value cannot be determined yet
+  | PDF DistType Dist  -- Since we cannot evaluate it now, we add it as a value
+  | NotDetermined DistType Ident -- value cannot be determined yet
   | PairVal (Value, Value)
 
 -- An environment is a map from identifiers to values
-type Env = Environment Value
+type VEnv = Environment Value
+type EEnv = Environment Expr
 
 notDeterVars :: Env -> Expr -> [Ident]
 notDeterVars env (Variable x) = 
   case find env x of
-    NotDetermined _ -> [x]
+    NotDetermined _ _ -> [x]
     _ -> []
 notDeterVars env (If e1 e2 e3) = notDeterVars env e1 ++ notDeterVars env e2 ++ notDeterVars env e3
-notDeterVars env (Apply f es) = notDeterVars env f ++ concatMap (notDeterVars env) es
+notDeterVars env (Apply f es) = concatMap (notDeterVars env) es
 notDeterVars env (Pair (x, y)) = notDeterVars env x ++ notDeterVars env y
 notDeterVars env (Loop bs1 e1 e2 bs2) =
   concatMap (notDeterVars env) es1 ++ notDeterVars env' e1 ++ notDeterVars env' e2 ++ concatMap (notDeterVars env) es2
@@ -100,7 +101,7 @@ partialEval env e =
   if null (notDeterVars env e) then 
     do v <- eval env e 
        case v of
-         Function _ -> return e -- e is a built in function
+         Function _ _ -> return e -- e is a variable of built in function
          _ -> return (valToTree v)
   else partialEval' env e
 
@@ -152,45 +153,41 @@ partialEval' env (Loop bs1 e1 e2 bs2) =
   where
     (xs1, es1) = unzip bs1
     (xs2, es2) = unzip bs2
-    env' = foldr (\(x,v) env -> define env x v) env (zip xs1 $ map NotDetermined xs1)
+    env' = foldr (\(x,v) env -> define env x v) env (zip xs1 $ map (NotDetermined DR) xs1)
 
 partialEval' _ e = return e
 
 apply :: Value -> [Value] -> M Value
-apply (Function f) args = f args
+apply (Function _ f) args = f args
 apply _ _ = error "applying a non-function"
 
-elab :: Bind -> Env -> M Env
-elab (Val x e) env = 
-  do 
-    v <- eval env e 
-    return (define env x v)
-elab (Rand x d) env = return (define env x (NotDetermined x))
 
 elabDist :: Defn -> Env -> M Env
 elabDist (Prob x d) env = 
-  do d' <- standardise env d 
-     return $ define env x (PDF d')
+  do (t,d') <- standardise env d 
+     return $ define env x (PDF t d')
 
-standardise :: Env -> Dist -> M Dist
-standardise env (Let b d)  = 
-  do env' <- elab b env; 
-     d' <- standardise env' d 
-     return $ if isDBind b then d' else Let b d'
-  where isDBind (Val _ _) = True
-        isDBind (Rand _ _ ) = False
+standardise :: Env -> Dist -> M (DistType, Dist)
+standardise env (Let (Val x e) d)  = 
+  -- FIXME Let x ~ Uniform(0,1) in let y = x + 1 in return y;
+  do v <- eval env e; 
+     standardise (define env x v) d 
+     
+standardise env (Let (Rand x d1) d2)  = 
+  do (t, d1') <- standardise env d1
+     standardise (define env x (NotDetermined t x)) d2
     
 standardise env (Score e d)  = 
-  do d' <- standardise env d 
-     t <- partialEval env e
-     return (Score t d')
+  do (t, d') <- standardise env d 
+     e' <- partialEval env e
+     return (t, Score e' d')
 
 standardise env (Return e)  = 
   do t <- partialEval env e; return (Return t)
 
-standardise env (PrimD x es) =
+standardise env (PrimD t x es) =
   do ts <- mapM (partialEval env) es; 
-     return $ Let (Rand z $ PrimD x ts) (Return $ Variable z)
+     return (t, Let (Rand z $ PrimD t x ts) (Return $ Variable z))
   where z = newIdent env
 
 newIdent :: Env -> Ident
@@ -226,7 +223,7 @@ init_env =
     pureprim "exp" (\[Real a] -> Real $ exp a),
     pureprim "log" (\[Real a] -> Real $ log a)]
   where constant x v = (x, v)
-        primitive x f = (x, Function f)
+        primitive x f = (x, Function x f)
         pureprim x f = primitive x (return . f)
 
 instance Eq Value where
@@ -234,7 +231,7 @@ instance Eq Value where
   BoolVal a == BoolVal b = a == b
   Nil == Nil = True
   Cons h1 t1 == Cons h2 t2 = (h1 == h2) && (t1 == t2)
-  Function _ == Function _ = error "can't compare functions"
+  Function n1 _ == Function n2 _ = n1 == n2
   _ == _ = False
 
 instance Show Value where
@@ -246,8 +243,8 @@ instance Show Value where
       shtail Nil = ""
       shtail (Cons h t) = ", " ++ show h ++ shtail t
       shtail x = " . " ++ show x
-  show (Function _) = "<function>"
-  show (PDF d) = show d
+  show (Function n _) = n
+  show (PDF _ d) = show d
   show (PairVal (x,y)) = show (x,y)
 
 obey :: Phrase -> Env -> (String, Env)

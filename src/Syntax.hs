@@ -8,11 +8,14 @@ data Phrase =
 
 data Dist = 
     Return Expr
-  | PrimD Ident [Expr]
+  | PrimD DistType Ident [Expr]
   | Let Bind Dist
   | Score Expr Dist
   deriving Show
 
+data DistType = DZ | DR
+  deriving Show
+  
 data Expr =                  
     Number Double            
   | If Expr Expr Expr         
