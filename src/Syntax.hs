@@ -14,7 +14,7 @@ data Dist =
   deriving Show
 
 data DistType = DZ | DR
-  deriving Show
+  deriving (Show,Eq)
   
 data Expr =                  
     Number Double            

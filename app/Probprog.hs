@@ -4,6 +4,7 @@ import Syntax
 import Parser
 import Environment
 import Control.Monad(liftM, ap)
+import Data.Maybe(isJust)
 
 type Ans = (String, Env)
 newtype M a = Mk ((a -> Ans) -> Ans)
@@ -234,6 +235,28 @@ newIdent env = head $ filter (\x -> x `notElem` names env) allStrings
   where
     allStrings = [c:s | s <- "":allStrings, c <- ['a'..'z'] ++ ['0'..'9']] 
 
+
+
+data Type = S BasicType | P (BasicType, BasicType)
+data BasicType = C | Uc
+
+
+
+
+nn _ _ = Just C
+
+
+ac :: Dist -> Bool
+ac d = isJust $ ac' empty_env d
+
+ac' :: Environment Type -> Dist -> Maybe Type
+ac' env (PrimD t _ _) = Just $ if t == DZ then S C else S Uc
+ac' env (Return e) = nn env e
+ac' env (Score e d) = ac' env d
+ac' env (Let (Rand x d1) d2) = 
+  do 
+    t <- ac' env d1
+    ac' (define env x t) d2
 
 init_env :: Env
 init_env = 
