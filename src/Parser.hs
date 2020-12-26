@@ -68,7 +68,6 @@ lexer =
       '{' -> return LBRACE
       '}' -> return RBRACE
       ';' -> return SEMI
-      ':' -> return (IDENT CONSOP ":")
       ' ' -> lexer
       '\t' -> lexer 
       '\n' -> do incln; lexer

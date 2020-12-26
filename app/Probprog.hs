@@ -11,7 +11,7 @@ newtype M a = Mk ((a -> Ans) -> Ans)
 applyK (Mk mx) = mx 
 
 instance Monad M where
-  return x = Mk (\k ->k x)
+  return x = Mk (\k -> k x)
   xm >>= f = Mk (\k -> applyK xm (\x -> applyK (f x) k)) 
 
 instance Functor M where fmap = liftM
@@ -20,20 +20,17 @@ data Value =
     Real Double       
   | BoolVal Bool      -- Booleans
   | Function Ident ([Value] -> M Value)         -- Functions
-  | Nil               -- Empty list
-  | Cons Value Value  -- Non-empty lists
-  | PDF DistType Dist  -- Since we cannot evaluate it now, we add it as a value
-  | NotDetermined DistType Ident -- value cannot be determined yet
+  | PDF Dist  -- Since we cannot evaluate it now, we add it as a value
+  | NotDetermined Ident -- value cannot be determined yet
   | PairVal (Value, Value)
 
 -- An environment is a map from identifiers to values
-type VEnv = Environment Value
-type EEnv = Environment Expr
+type Env = Environment Value
 
 notDeterVars :: Env -> Expr -> [Ident]
 notDeterVars env (Variable x) = 
   case find env x of
-    NotDetermined _ _ -> [x]
+    NotDetermined _ -> [x]
     _ -> []
 notDeterVars env (If e1 e2 e3) = notDeterVars env e1 ++ notDeterVars env e2 ++ notDeterVars env e3
 notDeterVars env (Apply f es) = concatMap (notDeterVars env) es
@@ -96,6 +93,24 @@ eval env (Loop bs1 e1 e2 bs2)  =
 eval e _ =
   error ("can't evaluate " ++ show e)
 
+simplify :: Env -> Dist -> M Dist
+simplify e d = simplify' e (standardise d)
+
+simplify' :: Env -> Dist -> M Dist
+simplify' env (Return e) = Return <$> partialEval env e
+simplify' env (PrimD t x es) = PrimD t x <$> mapM (partialEval env) es
+simplify' env (Score e d) =
+  do
+    e' <- partialEval env e
+    Score e' <$> simplify' env d
+simplify' env (Let (Rand x d1) d2) = 
+  do
+    d1' <- simplify' env d1
+    d2' <- simplify' (define env x $ NotDetermined x) d2
+    return $ Let (Rand x d1') d2'
+
+simplify' _ _ = error "Determinstinc bind should be eliminated before simplification"
+
 partialEval :: Env -> Expr -> M Expr
 partialEval env e = 
   if null (notDeterVars env e) then 
@@ -108,10 +123,8 @@ partialEval env e =
 
 valToTree :: Value -> Expr
 valToTree (Real n) = Number n
-valToTree (BoolVal True) = Apply (Variable "=") [Number 0, Number 0]
-valToTree (BoolVal False) = Apply (Variable "=") [Number 0, Number 1]
-valToTree Nil = Variable "nil"
-valToTree (Cons v1 v2) = Apply (Variable ":") [valToTree v1, valToTree v2]
+valToTree (BoolVal True) = Variable "true"
+valToTree (BoolVal False) = Variable "false"
 valToTree (PairVal (v1, v2)) =  Pair (valToTree v1, valToTree v2)
 valToTree v = error ("\ncannot convert the value back to Syntax Tree, " ++ show v)
 
@@ -153,7 +166,7 @@ partialEval' env (Loop bs1 e1 e2 bs2) =
   where
     (xs1, es1) = unzip bs1
     (xs2, es2) = unzip bs2
-    env' = foldr (\(x,v) env -> define env x v) env (zip xs1 $ map (NotDetermined DR) xs1)
+    env' = foldr (\(x,v) env -> define env x v) env (zip xs1 $ map NotDetermined xs1)
 
 partialEval' _ e = return e
 
@@ -164,33 +177,59 @@ apply _ _ = error "applying a non-function"
 
 elabDist :: Defn -> Env -> M Env
 elabDist (Prob x d) env = 
-  do (t,d') <- standardise env d 
-     return $ define env x (PDF t d')
+  do d' <- simplify env d 
+     return $ define env x (PDF d')
 
-standardise :: Env -> Dist -> M (DistType, Dist)
-standardise env (Let (Val x e) d)  = 
-  -- FIXME Let x ~ Uniform(0,1) in let y = x + 1 in return y;
-  do v <- eval env e; 
-     standardise (define env x v) d 
+standardise :: Dist -> Dist
+standardise = standardise' empty_env
+
+standardise' :: Environment Expr -> Dist -> Dist
+standardise' env (Let (Val x e) d)  = 
+  standardise' (define env x (substitute env e)) d 
      
-standardise env (Let (Rand x d1) d2)  = 
-  do (t, d1') <- standardise env d1
-     standardise (define env x (NotDetermined t x)) d2
+standardise' env (Let (Rand x d1) d2)  = 
+  Let (Rand x d1') d2'
+    where 
+      d1' = standardise' env d1
+      d2' = standardise' (define env x Empty) d2
+
     
-standardise env (Score e d)  = 
-  do (t, d') <- standardise env d 
-     e' <- partialEval env e
-     return (t, Score e' d')
+standardise' env (Score e d)  = 
+  let d' = standardise' env d in
+     Score (substitute env e) d'
 
-standardise env (Return e)  = 
-  do t <- partialEval env e; return (Return t)
+standardise' env (Return e)  = 
+  Return (substitute env e)
 
-standardise env (PrimD t x es) =
-  do ts <- mapM (partialEval env) es; 
-     return (t, Let (Rand z $ PrimD t x ts) (Return $ Variable z))
+standardise' env (PrimD t x es) =
+  Let (Rand z $ PrimD t x (map (substitute env) es)) (Return $ Variable z)
   where z = newIdent env
 
-newIdent :: Env -> Ident
+substitute :: Environment Expr -> Expr -> Expr
+substitute env (If e1 e2 e3) = If (substitute env e1) (substitute env e2) (substitute env e3)
+substitute env (Apply e1 es) = Apply (substitute env e1) (map (substitute env) es)
+substitute env (Pair (e1,e2)) = Pair (substitute env e1, substitute env e2)
+substitute env (Loop bs1 e1 e2 bs2) =
+  Loop (zip xs1 es1') e1' e2' (zip xs2 es2')
+  where 
+    (xs1, es1) = unzip bs1
+    (xs2, es2) = unzip bs2
+    es1' = map (substitute env) es1
+    env' = foldr (\x e -> define e x Empty) env xs1
+    e1' = substitute env' e1
+    e2' = substitute env' e2
+    es2' = map (substitute env') es2
+
+substitute env (Variable v) =
+  -- x = Empty means x is a random variable or x is a loop variable
+  case maybe_find env v of
+    Nothing -> Variable v
+    Just Empty -> Variable v
+    Just e -> e
+
+substitute env e = e
+
+newIdent :: Environment a -> Ident
 newIdent env = head $ filter (\x -> x `notElem` names env) allStrings
   where
     allStrings = [c:s | s <- "":allStrings, c <- ['a'..'z'] ++ ['0'..'9']] 
@@ -198,8 +237,7 @@ newIdent env = head $ filter (\x -> x `notElem` names env) allStrings
 
 init_env :: Env
 init_env = 
-  make_env [constant "nil" Nil, 
-            constant "true" (BoolVal True), 
+  make_env [constant "true" (BoolVal True), 
             constant "false" (BoolVal False),
     pureprim "+" (\ [Real a, Real b] -> Real (a + b)),
     pureprim "-" (\ [Real a, Real b] -> Real (a - b)),
@@ -212,9 +250,6 @@ init_env =
     pureprim ">=" (\ [Real a, Real b] -> BoolVal (a >= b)),
     pureprim "=" (\ [a, b] -> BoolVal (a == b)),
     pureprim "<>" (\ [a, b] -> BoolVal (a /= b)),
-    pureprim "head" (\ [Cons h _] -> h),
-    pureprim "tail" (\ [Cons _ t] -> t),
-    pureprim ":" (\ [a, b] -> Cons a b),
     pureprim "fst" (\[PairVal p] -> fst p),
     pureprim "snd" (\[PairVal p] -> snd p),
     pureprim "sin" (\[Real a] -> Real $ sin a),
@@ -229,28 +264,20 @@ init_env =
 instance Eq Value where
   Real a == Real b = a == b
   BoolVal a == BoolVal b = a == b
-  Nil == Nil = True
-  Cons h1 t1 == Cons h2 t2 = (h1 == h2) && (t1 == t2)
-  Function n1 _ == Function n2 _ = n1 == n2
+  Function n1 _ == Function n2 _ = n1 == n2 -- only builtin function, so comparable
   _ == _ = False
 
 instance Show Value where
   show (Real n) = show n
   show (BoolVal b) = if b then "true" else "false"
-  show Nil = "[]"
-  show (Cons h t) = "[" ++ show h ++ shtail t ++ "]"
-    where 
-      shtail Nil = ""
-      shtail (Cons h t) = ", " ++ show h ++ shtail t
-      shtail x = " . " ++ show x
   show (Function n _) = n
-  show (PDF _ d) = show d
+  show (PDF d) = show d
   show (PairVal (x,y)) = show (x,y)
 
 obey :: Phrase -> Env -> (String, Env)
 
 obey (Calculate dist) env =
-  applyK (standardise env dist) (\v -> (print_value v, env))
+  applyK (simplify env dist) (\v -> (print_value v, env))
 
 obey (Evaluate exp) env = 
   applyK (eval env exp) (\v -> (print_value v, env))
