@@ -237,20 +237,19 @@ newIdent env = head $ filter (\x -> x `notElem` names env) allStrings
 
 
 
-data Type = S BasicType | P (BasicType, BasicType)
-data BasicType = C | Uc
+data Type = Count | Uncount | PairT Type Type
 
 
-
-
-nn _ _ = Just C
-
+nn :: Environment Type -> Expr -> Maybe Type
+nn env (Variable x) = Just $ find env x 
+nn env (If e1 e2 e3) = 
+nn _ _ = Just Count
 
 ac :: Dist -> Bool
 ac d = isJust $ ac' empty_env d
 
 ac' :: Environment Type -> Dist -> Maybe Type
-ac' env (PrimD t _ _) = Just $ if t == DZ then S C else S Uc
+ac' env (PrimD t _ _) = Just $ if t == DZ then Count else Uncount
 ac' env (Return e) = nn env e
 ac' env (Score e d) = ac' env d
 ac' env (Let (Rand x d1) d2) = 
