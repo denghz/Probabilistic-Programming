@@ -29,20 +29,28 @@ data Value =
 type Env = Environment Value
 
 notDeterVars :: Env -> Expr -> [Ident]
-notDeterVars env (Variable x) = 
-  case find env x of
-    NotDetermined _ -> [x]
-    _ -> []
-notDeterVars env (If e1 e2 e3) = notDeterVars env e1 ++ notDeterVars env e2 ++ notDeterVars env e3
-notDeterVars env (Apply f es) = concatMap (notDeterVars env) es
-notDeterVars env (Pair (x, y)) = notDeterVars env x ++ notDeterVars env y
-notDeterVars env (Loop bs1 e1 e2 bs2) =
-  concatMap (notDeterVars env) es1 ++ notDeterVars env' e1 ++ notDeterVars env' e2 ++ concatMap (notDeterVars env) es2
+notDeterVars env e =
+  let vs = freeVars e in 
+    filter f vs
+    where 
+      f v = 
+        case find env v of
+          NotDetermined _ -> True
+          _ -> False
+
+freeVars :: Expr -> [Ident]
+freeVars (Variable x) = 
+  if x /= "true" || x /= " false" then [x] else []
+freeVars (If e1 e2 e3) = freeVars e1 ++ freeVars e2 ++ freeVars e3
+freeVars (Apply f es) = concatMap freeVars es
+freeVars (Pair (x, y)) = freeVars x ++ freeVars y
+freeVars (Loop bs1 e1 e2 bs2) =
+  concatMap freeVars es1 ++ filerLocal (freeVars e1 ++ freeVars e2 ++ concatMap freeVars es2)
   where 
     (xs1, es1) = unzip bs1
     (xs2, es2) = unzip bs2
-    env' = foldr (\(x,v) env -> define env x v) env (zip xs1 $ replicate (length xs1) (Real 0))
-notDeterVars _ _ = []
+    filerLocal = filter (`notElem` xs1)
+freeVars _ = []
 
 
 eval :: Env -> Expr -> M Value
@@ -237,12 +245,21 @@ newIdent env = head $ filter (\x -> x `notElem` names env) allStrings
 
 
 
-data Type = Count | Uncount | PairT Type Type
+data Type = Count | Uncount
+  deriving Eq
 
 
 nn :: Environment Type -> Expr -> Maybe Type
 nn env (Variable x) = Just $ find env x 
 nn env (If e1 e2 e3) = 
+  do t1 <- nn env e2
+     t2 <- nn env e3
+     return (if t1 == Count && t2 == Count then Count else Uncount)
+nn env (Apply (Variable "+") xs) = 
+  if freeVars (head xs) == [] then nn env (xs !! 1)
+  else if freeVars (xs !! 1) == [] then nn env (head xs)
+  else 
+    nn env (Pair (head xs, head $ tail xs))
 nn _ _ = Just Count
 
 ac :: Dist -> Bool
@@ -265,7 +282,7 @@ init_env =
     pureprim "-" (\ [Real a, Real b] -> Real (a - b)),
     pureprim "*" (\ [Real a, Real b] -> Real (a * b)),
     pureprim "~" (\ [Real a] -> Real (- a)),
-    pureprim "/" (\ [Real a, Real b] -> Real (a / b)),
+    pureprim "inv" (\ [Real a] -> Real (1 / a)),
     pureprim "<" (\ [Real a, Real b] -> BoolVal (a < b)),
     pureprim "<=" (\ [Real a, Real b] -> BoolVal (a <= b)),
     pureprim ">" (\ [Real a, Real b] -> BoolVal (a > b)),

@@ -52,7 +52,6 @@ lexer =
       '+' -> return (IDENT ADDOP "+")
       '-' -> switch [('-', do scanComment; lexer)] (return MINUS)
       '*' -> return (IDENT MULOP "*")
-      '/' -> return (IDENT MULOP "/")
       '!' -> return (IDENT MONOP "!")
       '~' -> return TILDE
       ',' -> return COMMA
