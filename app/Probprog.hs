@@ -255,11 +255,10 @@ nn env (If e1 e2 e3) =
   do t1 <- nn env e2
      t2 <- nn env e3
      return (if t1 == Count && t2 == Count then Count else Uncount)
-nn env (Apply (Variable "+") xs) = 
-  if freeVars (head xs) == [] then nn env (xs !! 1)
-  else if freeVars (xs !! 1) == [] then nn env (head xs)
-  else 
-    nn env (Pair (head xs, head $ tail xs))
+nn env (Apply (Variable "+") xs) 
+  | null $ freeVars (head xs) = nn env (xs !! 1)
+  | null $ freeVars (xs !! 1) = nn env (head xs)
+  | otherwise = nn env (Pair (head xs, head $ tail xs))
 nn _ _ = Just Count
 
 ac :: Dist -> Bool
