@@ -9,16 +9,16 @@ import Data.Maybe(isJust)
 type Ans = (String, Env)
 newtype M a = Mk ((a -> Ans) -> Ans)
 
-applyK (Mk mx) = mx 
+applyK (Mk mx) = mx
 
 instance Monad M where
   return x = Mk (\k -> k x)
-  xm >>= f = Mk (\k -> applyK xm (\x -> applyK (f x) k)) 
+  xm >>= f = Mk (\k -> applyK xm (\x -> applyK (f x) k))
 
 instance Functor M where fmap = liftM
 instance Applicative M where pure = return; (<*>) = ap
 data Value =
-    Real Double       
+    Real Double
   | BoolVal Bool      -- Booleans
   | Function Ident ([Value] -> M Value)         -- Functions
   | PDF Dist  -- Since we cannot evaluate it now, we add it as a value
@@ -30,23 +30,23 @@ type Env = Environment Value
 
 notDeterVars :: Env -> Expr -> [Ident]
 notDeterVars env e =
-  let vs = freeVars e in 
+  let vs = freeVars e in
     filter f vs
-    where 
-      f v = 
+    where
+      f v =
         case find env v of
           NotDetermined _ -> True
           _ -> False
 
 freeVars :: Expr -> [Ident]
-freeVars (Variable x) = 
-  if x /= "true" || x /= " false" then [x] else []
+freeVars (Variable x) =
+  [x | x /= "true" || x /= " false"]
 freeVars (If e1 e2 e3) = freeVars e1 ++ freeVars e2 ++ freeVars e3
 freeVars (Apply f es) = concatMap freeVars es
 freeVars (Pair (x, y)) = freeVars x ++ freeVars y
 freeVars (Loop bs1 e1 e2 bs2) =
   concatMap freeVars es1 ++ filerLocal (freeVars e1 ++ freeVars e2 ++ concatMap freeVars es2)
-  where 
+  where
     (xs1, es1) = unzip bs1
     (xs2, es2) = unzip bs2
     filerLocal = filter (`notElem` xs1)
@@ -60,43 +60,43 @@ eval _ (Number n)  = return (Real n)
 eval env (Variable x)  = return (find env x)
 
 eval env (If e1 e2 e3)  =
-  do 
-    b <- eval env e1 
+  do
+    b <- eval env e1
     case b of
-      BoolVal True -> eval env e2 
-      BoolVal False -> eval env e3 
+      BoolVal True -> eval env e2
+      BoolVal False -> eval env e3
       _ -> error "boolean required in conditional"
 
 eval env (Apply f es) =
   do
-    fv <- eval env f 
+    fv <- eval env f
     args <- mapM (eval env) es
     apply fv args
 
-eval env (Pair (x, y))  = 
+eval env (Pair (x, y))  =
   do
-    xv <- eval env x 
-    yv <- eval env y 
+    xv <- eval env x
+    yv <- eval env y
     return (PairVal (xv, yv))
 
-eval env (Loop bs1 e1 e2 bs2)  = 
-  do 
-    env' <- elabBinds env bs1 
+eval env (Loop bs1 e1 e2 bs2)  =
+  do
+    env' <- elabBinds env bs1
     u env'
   where
-    elabBinds env bs  = 
-      do 
+    elabBinds env bs  =
+      do
         vs <- mapM (eval env) es
         return (foldr (\(x,v) env -> define env x v) env $ zip xs vs)
-      where 
+      where
         (xs, es) = unzip bs
-        
+
     u env =
-      do 
-        b <- eval env e1 
+      do
+        b <- eval env e1
         case b of
           BoolVal False -> do env' <- elabBinds env bs2; u env'
-          BoolVal True -> eval env e2 
+          BoolVal True -> eval env e2
           _ -> error "boolean required in while loop"
 
 eval e _ =
@@ -112,7 +112,7 @@ simplify' env (Score e d) =
   do
     e' <- partialEval env e
     Score e' <$> simplify' env d
-simplify' env (Let (Rand x d1) d2) = 
+simplify' env (Let (Rand x d1) d2) =
   do
     d1' <- simplify' env d1
     d2' <- simplify' (define env x $ NotDetermined x) d2
@@ -121,9 +121,9 @@ simplify' env (Let (Rand x d1) d2) =
 simplify' _ _ = error "Determinstinc bind should be eliminated before simplification"
 
 partialEval :: Env -> Expr -> M Expr
-partialEval env e = 
-  if null (notDeterVars env e) then 
-    do v <- eval env e 
+partialEval env e =
+  if null (notDeterVars env e) then
+    do v <- eval env e
        case v of
          Function _ _ -> return e -- e is a variable of built in function
          _ -> return (valToTree v)
@@ -138,34 +138,34 @@ valToTree (PairVal (v1, v2)) =  Pair (valToTree v1, valToTree v2)
 valToTree v = error ("\ncannot convert the value back to Syntax Tree, " ++ show v)
 
 
-partialEval' :: Env -> Expr -> M Expr 
-partialEval' env (If e1 e2 e3) = 
+partialEval' :: Env -> Expr -> M Expr
+partialEval' env (If e1 e2 e3) =
   if null (notDeterVars env e1) then
     do
-      b <- eval env e1 
+      b <- eval env e1
       case b of
         BoolVal True -> partialEval env e2
         BoolVal False -> partialEval env e3
         _ -> error "boolean required in conditional"
   else
-    do 
+    do
       t1 <- partialEval env e1
       t2 <- partialEval env e2
       t3 <- partialEval env e3
       return (If t1 t2 t3)
 partialEval' env (Apply f es) =
   do
-    fv <- eval env f 
+    fv <- eval env f
     args <- mapM (partialEval env) es
     return (Apply f args)
 
-partialEval' env (Pair (x, y)) = 
+partialEval' env (Pair (x, y)) =
   do
     x' <- partialEval env x
     y' <- partialEval env y
     return $ Pair (x', y')
 
-partialEval' env (Loop bs1 e1 e2 bs2) = 
+partialEval' env (Loop bs1 e1 e2 bs2) =
   do
     ts1 <- mapM (partialEval env) es1
     t1 <- partialEval env' e1
@@ -185,29 +185,29 @@ apply _ _ = error "applying a non-function"
 
 
 elabDist :: Defn -> Env -> M Env
-elabDist (Prob x d) env = 
-  do d' <- simplify env d 
+elabDist (Prob x d) env =
+  do d' <- simplify env d
      return $ define env x (PDF d')
 
 standardise :: Dist -> Dist
 standardise = standardise' empty_env
 
 standardise' :: Environment Expr -> Dist -> Dist
-standardise' env (Let (Val x e) d)  = 
-  standardise' (define env x (substitute env e)) d 
-     
-standardise' env (Let (Rand x d1) d2)  = 
+standardise' env (Let (Val x e) d)  =
+  standardise' (define env x (substitute env e)) d
+
+standardise' env (Let (Rand x d1) d2)  =
   Let (Rand x d1') d2'
-    where 
+    where
       d1' = standardise' env d1
       d2' = standardise' (define env x Empty) d2
 
-    
-standardise' env (Score e d)  = 
+
+standardise' env (Score e d)  =
   let d' = standardise' env d in
      Score (substitute env e) d'
 
-standardise' env (Return e)  = 
+standardise' env (Return e)  =
   Return (substitute env e)
 
 standardise' env (PrimD t x es) =
@@ -220,7 +220,7 @@ substitute env (Apply e1 es) = Apply (substitute env e1) (map (substitute env) e
 substitute env (Pair (e1,e2)) = Pair (substitute env e1, substitute env e2)
 substitute env (Loop bs1 e1 e2 bs2) =
   Loop (zip xs1 es1') e1' e2' (zip xs2 es2')
-  where 
+  where
     (xs1, es1) = unzip bs1
     (xs2, es2) = unzip bs2
     es1' = map (substitute env) es1
@@ -241,7 +241,7 @@ substitute env e = e
 newIdent :: Environment a -> Ident
 newIdent env = head $ filter (\x -> x `notElem` names env) allStrings
   where
-    allStrings = [c:s | s <- "":allStrings, c <- ['a'..'z'] ++ ['0'..'9']] 
+    allStrings = [c:s | s <- "":allStrings, c <- ['a'..'z'] ++ ['0'..'9']]
 
 
 
@@ -250,12 +250,12 @@ data Type = Count | Uncount
 
 
 nn :: Environment Type -> Expr -> Maybe Type
-nn env (Variable x) = Just $ find env x 
-nn env (If e1 e2 e3) = 
+nn env (Variable x) = Just $ find env x
+nn env (If e1 e2 e3) =
   do t1 <- nn env e2
      t2 <- nn env e3
      return (if t1 == Count && t2 == Count then Count else Uncount)
-nn env (Apply (Variable "+") xs) 
+nn env (Apply (Variable "+") xs)
   | null $ freeVars (head xs) = nn env (xs !! 1)
   | null $ freeVars (xs !! 1) = nn env (head xs)
   | otherwise = nn env (Pair (head xs, head $ tail xs))
@@ -268,14 +268,14 @@ ac' :: Environment Type -> Dist -> Maybe Type
 ac' env (PrimD t _ _) = Just $ if t == DZ then Count else Uncount
 ac' env (Return e) = nn env e
 ac' env (Score e d) = ac' env d
-ac' env (Let (Rand x d1) d2) = 
-  do 
+ac' env (Let (Rand x d1) d2) =
+  do
     t <- ac' env d1
     ac' (define env x t) d2
 
 init_env :: Env
-init_env = 
-  make_env [constant "true" (BoolVal True), 
+init_env =
+  make_env [constant "true" (BoolVal True),
             constant "false" (BoolVal False),
     pureprim "+" (\ [Real a, Real b] -> Real (a + b)),
     pureprim "-" (\ [Real a, Real b] -> Real (a - b)),
@@ -317,7 +317,7 @@ obey :: Phrase -> Env -> (String, Env)
 obey (Calculate dist) env =
   applyK (simplify env dist) (\v -> (print_value v, env))
 
-obey (Evaluate exp) env = 
+obey (Evaluate exp) env =
   applyK (eval env exp) (\v -> (print_value v, env))
 
 obey (Define def) env =
