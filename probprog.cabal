@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: e9de2b87cbf9f2d64900ab247b084218ea63862a8413e01e8f6c04c7bd9c5be4
+-- hash: 3611375e4ce65ebf0b0c7bb3f9d4bd18463a734273cb5793894dbeefa23562ab
 
 name:           probprog
 version:        0.1.0.0
@@ -28,6 +28,7 @@ source-repository head
 library
   exposed-modules:
       Environment
+      Log
       Parser
       Parsing
       Syntax
@@ -38,6 +39,8 @@ library
   build-depends:
       base >=4.7 && <5
     , containers
+    , data-interval
+    , mtl
     , unix
   default-language: Haskell2010
 
@@ -51,6 +54,8 @@ executable probprog-exe
   build-depends:
       base >=4.7 && <5
     , containers
+    , data-interval
+    , mtl
     , probprog
     , unix
   default-language: Haskell2010
@@ -66,6 +71,8 @@ test-suite probprog-test
   build-depends:
       base >=4.7 && <5
     , containers
+    , data-interval
+    , mtl
     , probprog
     , unix
   default-language: Haskell2010
