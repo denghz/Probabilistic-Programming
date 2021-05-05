@@ -392,11 +392,33 @@ imageFunc "inv" rs =
   where 
     xs = if length (head rs) == 1 then toList $ (head (head rs)) else error "tuple arguement not allowed for inv"
     neg x = if 0 `Interval.member` x then Interval.whole 
-            else makeInterval (1/ub) ubt (1/lb) lbt
+            else makeInterval (if ub /= 0 then (1/ub) else NegInf) ubt (if lb /= 0 then (1/lb) else PosInf) lbt
           where 
             (lb, lbt) = lowerBound' x
-            (ub, ubt) = upperBound' x 
+            (ub, ubt) = upperBound' x
+imageFunc "fst" rs = 
+  if length rs /= 1 then error "only 1 arguement allowed for fst"
+  else if length (head rs) == 2 then [head (head rs)] else error "fst only accepts pair argument"
+imageFunc "snd" rs = 
+  if length rs /= 1 then error "only 1 arguement allowed for snd"
+  else if length (head rs) == 2 then [last (head rs)] else error "snd only accepts pair argument"
+imageFunc "floor" rs = 
+  if length rs /= 1 then error "only 1 arguement allowed for snd"
+  else if length (head rs) == 1 then 
+    [unions intRanges]
+  else error "floor only accepts one argument"
+    where 
+      intRanges = map (toIntervalSet.IntInterval.fromIntervalUnder) $ toList (head (head rs))
+      toIntervalSet x = 
+        if lb /= NegInf && ub /= PosInf 
+        then fromList $ map (IntInterval.toInterval.IntInterval.singleton) [(fromFinite lb)..(fromFinite ub)] 
+        else singleton $ IntInterval.toInterval x
+        where 
+          lb = IntInterval.lowerBound x
+          ub = IntInterval.upperBound x
+          fromFinite (Finite n) = n
       
+
 
 imageDist :: Environment Dist -> Dist -> [IntervalSet Double]
 imageDist env (Return e) = range env e
@@ -415,7 +437,7 @@ rangeToInt r =
       in
         case n of
           Just n -> n
-          Nothing -> error "Roll distribution only accept Integer parameter"
+          Nothing -> error "Roll/WRoll distribution only accept Integer parameter"
 
 imagePrim :: Ident -> [IntervalSet Double] -> IntervalSet Double
 imagePrim "Normal" rs = 
@@ -505,7 +527,7 @@ init_env =
     pureprim "-" (\ [Real a, Real b] -> Real (a - b)),
     pureprim "*" (\ [Real a, Real b] -> Real (a * b)),
     pureprim "~" (\ [Real a] -> Real (- a)),
-    pureprim "inv" (\ [Real a] -> Real (1 / a)),
+    pureprim "inv" (\ [Real a] -> if a /= 0 then Real (1 / a) else error "1/0 is undefined"),
     pureprim "<" (\ [Real a, Real b] -> BoolVal (a < b)),
     pureprim "<=" (\ [Real a, Real b] -> BoolVal (a <= b)),
     pureprim ">" (\ [Real a, Real b] -> BoolVal (a > b)),
