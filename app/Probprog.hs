@@ -251,7 +251,7 @@ newIdent env = head $ filter (\x -> x `notElem` names env) allStrings
 
 --Returns if x is an int to n decimal places
 isInt :: (Integral a, RealFrac b) => a -> b -> Bool
-isInt n x = (round $ 10^(fromIntegral n)*(x-(fromIntegral $ round x)))==0
+isInt n x = round (10^fromIntegral n*(x-fromIntegral (round x)))==0
 
 makeInterval :: (Ord a) => Extended a -> Boundary -> Extended a -> Boundary -> Interval a
 makeInterval lb lbt ub ubt =
@@ -265,13 +265,13 @@ makeInterval lb lbt ub ubt =
 
 -- All builtin function should be considered
 imageFunc :: Ident -> [[IntervalSet Double]] -> [IntervalSet Double]
-imageFunc "+" rs = 
+imageFunc "+" rs =
   if length rs /= 2 then error "only 2 arguement allowed for +"
   else [fromList [plus x y | x <- xs, y <- ys]]
-  where 
-    xs = if length (head rs) == 1 then toList $ (head (head rs)) else error "tuple arguement not allowed for +"
-    ys = if length (last rs) == 1 then toList $ (last (head rs)) else error "tuple arguement not allowed for +"
-    plus x y = 
+  where
+    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for +"
+    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for +"
+    plus x y =
       makeInterval lb lbt ub ubt
       where
         (lbx, lbxt) = lowerBound' x
@@ -280,15 +280,15 @@ imageFunc "+" rs =
         (uby, ubyt) = upperBound' y
         lb = lbx + lby
         ub = ubx + uby
-        lbt = if any (Open ==) [lbxt, lbyt] then Open else Closed 
-        ubt = if any (Open ==) [ubxt, ubyt] then Open else Closed 
-imageFunc "-" rs = 
+        lbt = if Open `elem` [lbxt, lbyt] then Open else Closed
+        ubt = if Open `elem` [ubxt, ubyt] then Open else Closed
+imageFunc "-" rs =
   if length rs /= 2 then error "only 2 arguement allowed for -"
   else [fromList [minus x y | x <- xs, y <- ys]]
-  where 
-    xs = if length (head rs) == 1 then toList $ (head (head rs)) else error "tuple arguement not allowed for -"
-    ys = if length (last rs) == 1 then toList $ (last (head rs)) else error "tuple arguement not allowed for -"
-    minus x y = 
+  where
+    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for -"
+    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for -"
+    minus x y =
       makeInterval lb lbt ub ubt
       where
         (lbx, lbxt) = lowerBound' x
@@ -297,15 +297,15 @@ imageFunc "-" rs =
         (uby, ubyt) = upperBound' y
         ub = ubx - lby
         lb = lbx - uby
-        ubt = if any (Open ==) [ubxt, lbyt] then Open else Closed 
-        lbt = if any (Open ==) [lbxt, ubyt] then Open else Closed 
-imageFunc "*" rs = 
+        ubt = if Open `elem` [ubxt, lbyt] then Open else Closed
+        lbt = if Open `elem` [lbxt, ubyt] then Open else Closed
+imageFunc "*" rs =
   if length rs /= 2 then error "only 2 arguement allowed for -"
   else [fromList [mul x y | x <- xs, y <- ys]]
-  where 
-    xs = if length (head rs) == 1 then toList $ (head (head rs)) else error "tuple arguement not allowed for *"
-    ys = if length (last rs) == 1 then toList $ (last (head rs)) else error "tuple arguement not allowed for *"
-    mul x y = 
+  where
+    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for *"
+    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for *"
+    mul x y =
       makeInterval lb lbt ub ubt
       where
         lbx = lowerBound' x
@@ -315,109 +315,145 @@ imageFunc "*" rs =
         bds = [(x*y, xt, yt) | (x, xt) <- [lbx, ubx], (y, yt) <- [lby, uby]]
         (ub, ubt1, ubt2) = maximum bds
         (lb, lbt1, lbt2) = minimum bds
-        ubt = if any (Open ==) [ubt1, ubt2] then Open else Closed 
-        lbt = if any (Open ==) [lbt1, lbt2] then Open else Closed 
-imageFunc "<" rs = 
+        ubt = if Open `elem` [ubt1, ubt2] then Open else Closed
+        lbt = if Open `elem` [lbt1, lbt2] then Open else Closed
+imageFunc "<" rs =
   if length rs /= 2 then error "only 2 arguement allowed for <"
   else [unions [less x y | x <- xs, y <- ys]]
-  where 
-    xs = if length (head rs) == 1 then toList $ (head (head rs)) else error "tuple arguement not allowed for <"
-    ys = if length (last rs) == 1 then toList $ (last (head rs)) else error "tuple arguement not allowed for <"
-    less x y = 
-      if x >=! y then singleton (Finite 0 <=..<= Finite 0)
-      else if x <! y then singleton (Finite 1 <=..<= Finite 1)
-      else fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-imageFunc "<=" rs = 
+  where
+    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for <"
+    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for <"
+    less x y
+      | x >=! y = singleton (Finite 0 <=..<= Finite 0)
+      | x <! y = singleton (Finite 1 <=..<= Finite 1)
+      | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
+imageFunc "<=" rs =
   if length rs /= 2 then error "only 2 arguement allowed for <="
   else [unions [lessEq x y | x <- xs, y <- ys]]
-  where 
-    xs = if length (head rs) == 1 then toList $ (head (head rs)) else error "tuple arguement not allowed for <="
-    ys = if length (last rs) == 1 then toList $ (last (head rs)) else error "tuple arguement not allowed for <="
-    lessEq x y = 
-      if x >! y then singleton (Finite 0 <=..<= Finite 0)
-      else if x <=! y then singleton (Finite 1 <=..<= Finite 1)
-      else fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-imageFunc ">" rs = 
+  where
+    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for <="
+    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for <="
+    lessEq x y
+      | x >! y = singleton (Finite 0 <=..<= Finite 0)
+      | x <=! y = singleton (Finite 1 <=..<= Finite 1)
+      | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
+imageFunc ">" rs =
   if length rs /= 2 then error "only 2 arguement allowed for >"
   else [unions [gt x y | x <- xs, y <- ys]]
-  where 
-    xs = if length (head rs) == 1 then toList $ (head (head rs)) else error "tuple arguement not allowed for >"
-    ys = if length (last rs) == 1 then toList $ (last (head rs)) else error "tuple arguement not allowed for >"
-    gt x y = 
-      if x <=! y then singleton (Finite 0 <=..<= Finite 0)
-      else if x >! y then singleton (Finite 1 <=..<= Finite 1)
-      else fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-imageFunc ">=" rs = 
+  where
+    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for >"
+    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for >"
+    gt x y
+      | x <=! y = singleton (Finite 0 <=..<= Finite 0)
+      | x >! y = singleton (Finite 1 <=..<= Finite 1)
+      | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
+imageFunc ">=" rs =
   if length rs /= 2 then error "only 2 arguement allowed for >="
   else [unions [gtEq x y | x <- xs, y <- ys]]
-  where 
-    xs = if length (head rs) == 1 then toList $ (head (head rs)) else error "tuple arguement not allowed for >="
-    ys = if length (last rs) == 1 then toList $ (last (head rs)) else error "tuple arguement not allowed for >="
-    gtEq x y = 
-      if x <! y then singleton (Finite 0 <=..<= Finite 0)
-      else if x >=! y then singleton (Finite 1 <=..<= Finite 1)
-      else fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-imageFunc "=" rs = 
+  where
+    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for >="
+    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for >="
+    gtEq x y
+      | x <! y = singleton (Finite 0 <=..<= Finite 0)
+      | x >=! y = singleton (Finite 1 <=..<= Finite 1)
+      | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
+imageFunc "=" rs =
   if length rs /= 2 then error "only 2 arguement allowed for ="
   else [unions [eq x y | x <- xs, y <- ys]]
-  where 
-    xs = if length (head rs) == 1 then toList $ (head (head rs)) else error "tuple arguement not allowed for ="
-    ys = if length (last rs) == 1 then toList $ (last (head rs)) else error "tuple arguement not allowed for ="
-    eq x y = 
-      if x /=! y then singleton (Finite 0 <=..<= Finite 0)
-      else if x ==! y then singleton (Finite 1 <=..<= Finite 1)
-      else fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-imageFunc "<>" rs = 
+  where
+    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for ="
+    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for ="
+    eq x y
+      | x /=! y = singleton (Finite 0 <=..<= Finite 0)
+      | x ==! y = singleton (Finite 1 <=..<= Finite 1)
+      | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
+imageFunc "<>" rs =
   if length rs /= 2 then error "only 2 arguement allowed for <>"
   else [unions [notEq x y | x <- xs, y <- ys]]
-  where 
-    xs = if length (head rs) == 1 then toList $ (head (head rs)) else error "tuple arguement not allowed for <>"
-    ys = if length (last rs) == 1 then toList $ (last (head rs)) else error "tuple arguement not allowed for <>"
-    notEq x y = 
-      if x ==! y then singleton (Finite 0 <=..<= Finite 0)
-      else if x /=! y then singleton (Finite 1 <=..<= Finite 1)
-      else fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-imageFunc "~" rs = 
+  where
+    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for <>"
+    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for <>"
+    notEq x y
+      | x ==! y = singleton (Finite 0 <=..<= Finite 0)
+      | x /=! y = singleton (Finite 1 <=..<= Finite 1)
+      | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
+imageFunc "~" rs =
   if length rs /= 1 then error "only 1 arguement allowed for ~"
   else [fromList $ map neg xs]
-  where 
-    xs = if length (head rs) == 1 then toList $ (head (head rs)) else error "tuple arguement not allowed for ~"
+  where
+    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for ~"
     neg x = makeInterval (-ub) ubt (-lb) lbt
-      where 
+      where
         (lb, lbt) = lowerBound' x
-        (ub, ubt) = upperBound' x  
-imageFunc "inv" rs = 
+        (ub, ubt) = upperBound' x
+imageFunc "inv" rs =
   if length rs /= 1 then error "only 1 arguement allowed for inv"
   else [fromList $ map neg xs]
-  where 
-    xs = if length (head rs) == 1 then toList $ (head (head rs)) else error "tuple arguement not allowed for inv"
-    neg x = if 0 `Interval.member` x then Interval.whole 
-            else makeInterval (if ub /= 0 then (1/ub) else NegInf) ubt (if lb /= 0 then (1/lb) else PosInf) lbt
-          where 
+  where
+    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for inv"
+    neg x = if 0 `Interval.member` x then Interval.whole
+            else makeInterval (if ub /= 0 then 1/ub else NegInf) ubt (if lb /= 0 then 1/lb else PosInf) lbt
+          where
             (lb, lbt) = lowerBound' x
             (ub, ubt) = upperBound' x
-imageFunc "fst" rs = 
-  if length rs /= 1 then error "only 1 arguement allowed for fst"
-  else if length (head rs) == 2 then [head (head rs)] else error "fst only accepts pair argument"
-imageFunc "snd" rs = 
-  if length rs /= 1 then error "only 1 arguement allowed for snd"
-  else if length (head rs) == 2 then [last (head rs)] else error "snd only accepts pair argument"
-imageFunc "floor" rs = 
-  if length rs /= 1 then error "only 1 arguement allowed for snd"
-  else if length (head rs) == 1 then 
-    [unions intRanges]
-  else error "floor only accepts one argument"
-    where 
-      intRanges = map (toIntervalSet.IntInterval.fromIntervalUnder) $ toList (head (head rs))
-      toIntervalSet x = 
-        if lb /= NegInf && ub /= PosInf 
-        then fromList $ map (IntInterval.toInterval.IntInterval.singleton) [(fromFinite lb)..(fromFinite ub)] 
-        else singleton $ IntInterval.toInterval x
-        where 
-          lb = IntInterval.lowerBound x
-          ub = IntInterval.upperBound x
-          fromFinite (Finite n) = n
-      
+imageFunc "fst" rs
+  | length rs /= 1 = error "only 1 arguement allowed for fst"
+  | length (head rs) == 2 = [head (head rs)]
+  | otherwise = error "fst only accepts pair argument"
+imageFunc "snd" rs
+  | length rs /= 1 = error "only 1 arguement allowed for snd"
+  | length (head rs) == 2 = [last (head rs)]
+  | otherwise = error "snd only accepts pair argument"
+imageFunc "floor" rs
+  | length rs /= 1 = error "only 1 arguement allowed for floor"
+  | length (head rs) == 1 = [unions intRanges]
+  | otherwise = error "floor only accepts one argument"
+  where
+      intRanges
+        = map (toIntervalSet . IntInterval.fromIntervalUnder)
+            $ toList (head (head rs))
+      toIntervalSet x
+        = if lb /= NegInf && ub /= PosInf then
+              fromList
+                $ map
+                    (IntInterval.toInterval . IntInterval.singleton)
+                    [(fromFinite lb) .. (fromFinite ub)]
+          else
+              singleton $ IntInterval.toInterval x
+        where
+            lb = IntInterval.lowerBound x
+            ub = IntInterval.upperBound x
+            fromFinite (Finite n) = n
+imageFunc "exp" rs
+  | length rs /= 1 = error "only 1 arguement allowed for exp"
+  | length (head rs) == 1 = [fromList $ map expRange (toList (head (head rs)))]
+  | otherwise = error "exp only accepts one argument"
+  where
+      expRange x
+        = makeInterval (expER lb) lbt (expER ub) ubt
+        where
+            (lb, lbt) = lowerBound' x
+            (ub, ubt) = upperBound' x
+            expER (Finite n) = Finite (exp n)
+            expER PosInf = PosInf
+            expER NegInf = Finite 0
+imageFunc "log" rs
+  | length rs /= 1 = error "only 1 arguement allowed for log"
+  | length (head rs) == 1 = [fromList $ map logRange (toList (head (head rs)))]
+  | otherwise = error "log only accepts one argument"
+  where
+      logRange x
+        = if (lb < Finite 0) || (lb == Finite 0 && lbt == Closed) then
+              error "log x is undefined when x <= 0"
+          else
+              makeInterval (logER lb) lbt (logER ub) ubt
+        where
+            (lb, lbt) = lowerBound' x
+            (ub, ubt) = upperBound' x
+            logER (Finite 0) = NegInf
+            logER PosInf = PosInf
+            logER (Finite n) = Finite (log n)
+
 
 
 imageDist :: Environment Dist -> Dist -> [IntervalSet Double]
@@ -425,12 +461,12 @@ imageDist env (Return e) = range env e
 imageDist env (Let (Rand x d1) d2) = imageDist (define env x d1) d2
 imageDist env (Score e d) = imageDist env d -- unable to calculate, for safety, return the upperbound
 imageDist env (PrimD _ id es) = [imagePrim id rs]
-  where 
-    rs = map (f.(range env)) es
+  where
+    rs = map (f.range env) es
     f rs = if length rs == 1 then head rs else error $ show es ++ ", arguement of distribution cannot be tuple"
 
-rangeToInt :: (Integral b, RealFrac a) => Interval a -> b 
-rangeToInt r = 
+rangeToInt :: (Integral b, RealFrac a) => Interval a -> b
+rangeToInt r =
       let n = do
                 n <- Data.Interval.extractSingleton r
                 if isInt 10 n then return $ round n else Nothing
@@ -440,56 +476,56 @@ rangeToInt r =
           Nothing -> error "Roll/WRoll distribution only accept Integer parameter"
 
 imagePrim :: Ident -> [IntervalSet Double] -> IntervalSet Double
-imagePrim "Normal" rs = 
-  if length rs /= 2 then error "Normal distribution can only have two parameters." 
-  else 
+imagePrim "Normal" rs =
+  if length rs /= 2 then error "Normal distribution can only have two parameters."
+  else
     let variance = last rs in let mean = head rs in
-      if variance `isSubsetOf` (singleton (Finite 0 <=..<= Finite 0)) 
+      if variance `isSubsetOf` singleton (Finite 0 <=..<= Finite 0)
         then mean else Intervals.whole
-imagePrim "Uniform" rs = 
+imagePrim "Uniform" rs =
   if length rs /= 2 then error "Unifrom distribution can only have two parameters."
-  else 
+  else
     singleton $ Intervals.span (unions rs) --convex hull
 imagePrim "Roll" rs =
   if length rs /= 1 then error "Roll distribution can only have on parameter"
   else let max = maximum $ map rangeToInt (toList $ head rs)   in
     fromList $ map (IntInterval.toInterval.IntInterval.singleton) [1..max]
 imagePrim "WRoll" rs = let res = unions rs in let _ = map rangeToInt (toList res) in res
-  
+
 
 range :: Environment Dist -> Expr -> [IntervalSet Double]
 range env (Pair p) = range env (fst p) ++ range env (snd p)
-range _ (Number n) = [singleton $ (Finite n) <=..<= (Finite n)]
-range env (If _ e1 e2) = 
-  if length rs1 == length rs2 then zipWith union rs1 rs2 
-    else error $ show e1 ++ ", " ++ show e2 ++ ", don't have same dimension" 
+range _ (Number n) = [singleton $ Finite n <=..<= Finite n]
+range env (If _ e1 e2) =
+  if length rs1 == length rs2 then zipWith union rs1 rs2
+    else error $ show e1 ++ ", " ++ show e2 ++ ", don't have same dimension"
   -- this is a upperbound estimate, can be calculate more accurate by using the lattices library.
   where
     rs1 = range env e1
     rs2 = range env e2
 range env (Apply (Variable n) es) = imageFunc n (map (range env) es)
 range env (Variable x) = let d = find env x in imageDist env d
-range env (Loop _ _ _ _) = [Intervals.whole] --unable to calculate, for safety, return the upperbound
+range env Loop {} = [Intervals.whole] --unable to calculate, for safety, return the upperbound
 
 typePrim :: Environment Dist -> Dist -> Type
 typePrim env (PrimD t id es)
-  | t == DZ = Count 
-  | id == "Normal" = 
+  | t == DZ = Count
+  | id == "Normal" =
     if Intervals.member 0 (last rs) then Count else Uncount
-    
-  | id == "Uniform" =  
+
+  | id == "Uniform" =
     if Intervals.null (intersections rs)
-      then Uncount else Count 
-  where 
-    rs = map ((f id).(range env)) es
-    f dist rs = 
+      then Uncount else Count
+  where
+    rs = map (f id.range env) es
+    f dist rs =
       case dist of
         "WRoll" -> if length rs == 2 then head rs else error $ show es ++ ", arguement of WRoll distribution can only be pair"
         _ -> if length rs == 1 then head rs else error $ show es ++ ", arguement of" ++ dist ++ " distribution cannot be tuple"
-typePrim _ d = error $ show d ++ " is not a prim dist" 
- 
+typePrim _ d = error $ show d ++ " is not a prim dist"
 
-data Type = Count | Uncount 
+
+data Type = Count | Uncount
   deriving Eq
 
 
@@ -499,7 +535,7 @@ nn env (Number  _) = Just Count
 nn env (If e1 e2 e3) =
   do t1 <- nn env e2
      t2 <- nn env e3
-     return (if t1 == t2 then t1 
+     return (if t1 == t2 then t1
               else error $ show (If e1 e2 e3) ++ ", doesn't have the same type in both branches")
 nn env (Apply (Variable "+") xs)
   | null $ freeVars (head xs) = nn env (last xs)
