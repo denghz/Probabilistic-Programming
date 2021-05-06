@@ -25,6 +25,12 @@ dependencies:
 - unix
 - data-interval
 - mtl
+- data-msgpack
+- bytestring
+- text
+- filepath
+- directory
+- cpython
 
 library:
   source-dirs: src

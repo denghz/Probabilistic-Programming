@@ -11,6 +11,13 @@ packages:
       sha256: d2525900880dfaf375fbb3ad3032dfa8315e60fa0b8076a6ee0a9a8a73e5c48a
   original:
     hackage: data-interval-2.1.0
+- completed:
+    hackage: cpython-3.5.1@sha256:fb15b6778a14671d9bd2c7c76d24ca8ca08e206381e6b7770efae75ab1e0ff6c,2643
+    pantry-tree:
+      size: 2936
+      sha256: 28d718872befa93c44162ebb5b49139e5b24f3c4d3e2f8769f8ed5e43a3883c7
+  original:
+    hackage: cpython-3.5.1
 snapshots:
 - completed:
     size: 567241

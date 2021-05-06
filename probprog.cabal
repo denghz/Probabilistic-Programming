@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 3611375e4ce65ebf0b0c7bb3f9d4bd18463a734273cb5793894dbeefa23562ab
+-- hash: 0e0e91edc0eae13dcdc4c87b7d7d6f68a78940665d37d02843967b749f95b4a1
 
 name:           probprog
 version:        0.1.0.0
@@ -28,6 +28,7 @@ source-repository head
 library
   exposed-modules:
       Environment
+      FFI.Python.MessagePack
       Log
       Parser
       Parsing
@@ -38,9 +39,15 @@ library
       src
   build-depends:
       base >=4.7 && <5
+    , bytestring
     , containers
+    , cpython
     , data-interval
+    , data-msgpack
+    , directory
+    , filepath
     , mtl
+    , text
     , unix
   default-language: Haskell2010
 
@@ -53,10 +60,16 @@ executable probprog-exe
   ghc-options: -threaded -rtsopts -with-rtsopts=-N -main-is Probprog
   build-depends:
       base >=4.7 && <5
+    , bytestring
     , containers
+    , cpython
     , data-interval
+    , data-msgpack
+    , directory
+    , filepath
     , mtl
     , probprog
+    , text
     , unix
   default-language: Haskell2010
 
@@ -70,9 +83,15 @@ test-suite probprog-test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , bytestring
     , containers
+    , cpython
     , data-interval
+    , data-msgpack
+    , directory
+    , filepath
     , mtl
     , probprog
+    , text
     , unix
   default-language: Haskell2010
