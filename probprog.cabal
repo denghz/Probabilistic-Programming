@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 0e0e91edc0eae13dcdc4c87b7d7d6f68a78940665d37d02843967b749f95b4a1
+-- hash: 34b40ae79e074eed62a26e6e368ace999c5369eabf0ce068cc991b4549697190
 
 name:           probprog
 version:        0.1.0.0
@@ -28,7 +28,6 @@ source-repository head
 library
   exposed-modules:
       Environment
-      FFI.Python.MessagePack
       Log
       Parser
       Parsing
