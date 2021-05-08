@@ -1,5 +1,7 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Probprog(main,eval,init_env) where
-import Parsing(dialog, print_defn, print_value)
+import Parsing(dialogm, print_defn, print_value)
 import Syntax
 import Parser
 import qualified Data.IntervalSet as Intervals(null, member, whole, span)
@@ -10,9 +12,27 @@ import qualified Data.Interval as Interval(member, whole)
 import Environment
 import Control.Monad(liftM, ap)
 import Data.Maybe(isJust)
-import Log
+import Data.Char
 
-type Ans = (String, Env)
+import qualified CPython as Py
+import qualified CPython.Protocols.Object as Py
+import qualified CPython.System as Py
+import qualified CPython.Types as Py
+import qualified CPython.Types.Dictionary as PyDict
+import qualified CPython.Types.Exception as Py
+import qualified CPython.Types.Module as Py
+import CPython.Simple
+
+import qualified Control.Exception as E
+import           Data.Semigroup ((<>))
+import           Data.Text (Text)
+import qualified Data.Text as T
+import qualified Data.Text.IO as T
+import           System.Directory (getCurrentDirectory)
+import           System.FilePath ((</>))
+import           System.IO (stdout, stderr, hPutStrLn)
+
+type Ans = IO Env
 newtype M a = Mk ((a -> Ans) -> Ans)
 
 applyK (Mk mx) = mx
@@ -264,10 +284,10 @@ makeInterval lb lbt ub ubt =
 -- Extended Real is a ring not a field
 
 -- All builtin function should be considered
-imageFunc :: Ident -> [[IntervalSet Double]] -> [IntervalSet Double]
+imageFunc :: Ident -> [[IntervalSet Double]] -> M [IntervalSet Double]
 imageFunc "+" rs =
   if length rs /= 2 then error "only 2 arguement allowed for +"
-  else [fromList [plus x y | x <- xs, y <- ys]]
+  else return [fromList [plus x y | x <- xs, y <- ys]]
   where
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for +"
     ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for +"
@@ -284,7 +304,7 @@ imageFunc "+" rs =
         ubt = if Open `elem` [ubxt, ubyt] then Open else Closed
 imageFunc "-" rs =
   if length rs /= 2 then error "only 2 arguement allowed for -"
-  else [fromList [minus x y | x <- xs, y <- ys]]
+  else return [fromList [minus x y | x <- xs, y <- ys]]
   where
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for -"
     ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for -"
@@ -301,7 +321,7 @@ imageFunc "-" rs =
         lbt = if Open `elem` [lbxt, ubyt] then Open else Closed
 imageFunc "*" rs =
   if length rs /= 2 then error "only 2 arguement allowed for -"
-  else [fromList [mul x y | x <- xs, y <- ys]]
+  else return [fromList [mul x y | x <- xs, y <- ys]]
   where
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for *"
     ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for *"
@@ -319,7 +339,7 @@ imageFunc "*" rs =
         lbt = if Open `elem` [lbt1, lbt2] then Open else Closed
 imageFunc "<" rs =
   if length rs /= 2 then error "only 2 arguement allowed for <"
-  else [unions [less x y | x <- xs, y <- ys]]
+  else return [unions [less x y | x <- xs, y <- ys]]
   where
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for <"
     ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for <"
@@ -329,7 +349,7 @@ imageFunc "<" rs =
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
 imageFunc "<=" rs =
   if length rs /= 2 then error "only 2 arguement allowed for <="
-  else [unions [lessEq x y | x <- xs, y <- ys]]
+  else return [unions [lessEq x y | x <- xs, y <- ys]]
   where
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for <="
     ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for <="
@@ -339,7 +359,7 @@ imageFunc "<=" rs =
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
 imageFunc ">" rs =
   if length rs /= 2 then error "only 2 arguement allowed for >"
-  else [unions [gt x y | x <- xs, y <- ys]]
+  else return [unions [gt x y | x <- xs, y <- ys]]
   where
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for >"
     ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for >"
@@ -349,7 +369,7 @@ imageFunc ">" rs =
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
 imageFunc ">=" rs =
   if length rs /= 2 then error "only 2 arguement allowed for >="
-  else [unions [gtEq x y | x <- xs, y <- ys]]
+  else return [unions [gtEq x y | x <- xs, y <- ys]]
   where
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for >="
     ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for >="
@@ -359,7 +379,7 @@ imageFunc ">=" rs =
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
 imageFunc "=" rs =
   if length rs /= 2 then error "only 2 arguement allowed for ="
-  else [unions [eq x y | x <- xs, y <- ys]]
+  else return [unions [eq x y | x <- xs, y <- ys]]
   where
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for ="
     ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for ="
@@ -369,7 +389,7 @@ imageFunc "=" rs =
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
 imageFunc "<>" rs =
   if length rs /= 2 then error "only 2 arguement allowed for <>"
-  else [unions [notEq x y | x <- xs, y <- ys]]
+  else return [unions [notEq x y | x <- xs, y <- ys]]
   where
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for <>"
     ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for <>"
@@ -379,7 +399,7 @@ imageFunc "<>" rs =
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
 imageFunc "~" rs =
   if length rs /= 1 then error "only 1 arguement allowed for ~"
-  else [fromList $ map neg xs]
+  else return [fromList $ map neg xs]
   where
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for ~"
     neg x = makeInterval (-ub) ubt (-lb) lbt
@@ -388,7 +408,7 @@ imageFunc "~" rs =
         (ub, ubt) = upperBound' x
 imageFunc "inv" rs =
   if length rs /= 1 then error "only 1 arguement allowed for inv"
-  else [fromList $ map neg xs]
+  else return [fromList $ map neg xs]
   where
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for inv"
     neg x = if 0 `Interval.member` x then Interval.whole
@@ -398,15 +418,15 @@ imageFunc "inv" rs =
             (ub, ubt) = upperBound' x
 imageFunc "fst" rs
   | length rs /= 1 = error "only 1 arguement allowed for fst"
-  | length (head rs) == 2 = [head (head rs)]
+  | length (head rs) == 2 = return [head (head rs)]
   | otherwise = error "fst only accepts pair argument"
 imageFunc "snd" rs
   | length rs /= 1 = error "only 1 arguement allowed for snd"
-  | length (head rs) == 2 = [last (head rs)]
+  | length (head rs) == 2 = return [last (head rs)]
   | otherwise = error "snd only accepts pair argument"
 imageFunc "floor" rs
   | length rs /= 1 = error "only 1 arguement allowed for floor"
-  | length (head rs) == 1 = [unions intRanges]
+  | length (head rs) == 1 = return [unions intRanges]
   | otherwise = error "floor only accepts one argument"
   where
       intRanges
@@ -426,7 +446,7 @@ imageFunc "floor" rs
             fromFinite (Finite n) = n
 imageFunc "exp" rs
   | length rs /= 1 = error "only 1 arguement allowed for exp"
-  | length (head rs) == 1 = [fromList $ map expRange (toList (head (head rs)))]
+  | length (head rs) == 1 = return [fromList $ map expRange (toList (head (head rs)))]
   | otherwise = error "exp only accepts one argument"
   where
       expRange x
@@ -439,7 +459,7 @@ imageFunc "exp" rs
             expER NegInf = Finite 0
 imageFunc "log" rs
   | length rs /= 1 = error "only 1 arguement allowed for log"
-  | length (head rs) == 1 = [fromList $ map logRange (toList (head (head rs)))]
+  | length (head rs) == 1 = return [fromList $ map logRange (toList (head (head rs)))]
   | otherwise = error "log only accepts one argument"
   where
       logRange x
@@ -453,19 +473,61 @@ imageFunc "log" rs
             logER (Finite 0) = NegInf
             logER PosInf = PosInf
             logER (Finite n) = Finite (log n)
+imageFunc id rs
+  | id `elem` ["sin", "cos", "tan"] =
+    if length rs /= 1 then error ("only 1 arguement allowed for " ++ id)
+    else if length (head rs) == 1 then Mk(\k ->
+      (do
+        rs' <- mapM (triRange id) (toList (head (head rs)))
+        k [fromList rs']))
+    else error (id ++ " only accepts one argument")
+    where 
+      triRange id x = 
+        do
+          cwd <- getCurrentDirectory
+          Py.initialize
+          pythonpath <- Py.getPath
+          T.putStrLn ("Python path at startup is: " <> pythonpath <> "\n")
+          -- Appending so that the user's PYTHONPATH variable (ready by python) can go first.
+          let updatedPytonpath = pythonpath <> ":/home/dhz/.local/lib/python3.6/site-packages:/usr/local/lib/python3.6/dist-packages:/usr/lib/python3/dist-packages:./test"
+          T.putStrLn ("Setting Python path to: " <> updatedPytonpath <> "\n")
+          Py.setPath updatedPytonpath 
+          let calRanges = call "functionRange" "calRange"
+          res <- calRanges 
+                  [arg (T.pack $ toUpper (head id) : tail id),  
+                  arg (mapER lb),
+                  arg (T.pack $ show lbt),
+                  arg (mapER ub),
+                  arg (T.pack $ show ubt) ] []
+          Py.finalize 
+          let (lb, lbt) = getLb (fst res)
+          let (ub, ubt) = getUb (snd res)
+          return $ makeInterval lb lbt ub ubt
+        where
+          (lb, lbt) = lowerBound' x
+          (ub, ubt) = upperBound' x
+          mapER (Finite n) = Just n
+          mapER _ = Nothing
+          getLb Nothing = (NegInf, Open)
+          getLb (Just (lb, lbt)) = (Finite lb, read $ T.unpack lbt)
+          getUb Nothing = (PosInf, Open)
+          getUb (Just (ub, ubt)) = (Finite ub, read $ T.unpack ubt)
 
 
 
-imageDist :: Environment Dist -> Dist -> [IntervalSet Double]
+imageDist :: Environment Dist -> Dist -> M [IntervalSet Double]
 imageDist env (Return e) = range env e
 imageDist env (Let (Rand x d1) d2) = imageDist (define env x d1) d2
 imageDist env (Score e d) = imageDist env d -- unable to calculate, for safety, return the upperbound
-imageDist env (PrimD _ id es) = [imagePrim id rs]
-  where
-    rs = map (f.range env) es
+imageDist env (PrimD _ id es) = 
+    do 
+      rs <- mapM (range env) es
+      x' <- imagePrim id (map f rs)
+      return [x']
+    where
     f rs = if length rs == 1 then head rs else error $ show es ++ ", arguement of distribution cannot be tuple"
 
-rangeToInt :: (Integral b, RealFrac a) => Interval a -> b
+rangeToInt :: (Integral b,  RealFrac a) => Interval a -> b
 rangeToInt r =
       let n = do
                 n <- Data.Interval.extractSingleton r
@@ -475,49 +537,62 @@ rangeToInt r =
           Just n -> n
           Nothing -> error "Roll/WRoll distribution only accept Integer parameter"
 
-imagePrim :: Ident -> [IntervalSet Double] -> IntervalSet Double
+imagePrim :: Ident -> [IntervalSet Double] -> M (IntervalSet Double)
 imagePrim "Normal" rs =
   if length rs /= 2 then error "Normal distribution can only have two parameters."
   else
     let variance = last rs in let mean = head rs in
       if variance `isSubsetOf` singleton (Finite 0 <=..<= Finite 0)
-        then mean else Intervals.whole
+        then return mean else return Intervals.whole
 imagePrim "Uniform" rs =
   if length rs /= 2 then error "Unifrom distribution can only have two parameters."
   else
-    singleton $ Intervals.span (unions rs) --convex hull
+    return $ singleton (Intervals.span (unions rs)) --convex hull
 imagePrim "Roll" rs =
   if length rs /= 1 then error "Roll distribution can only have on parameter"
   else let max = maximum $ map rangeToInt (toList $ head rs)   in
-    fromList $ map (IntInterval.toInterval.IntInterval.singleton) [1..max]
-imagePrim "WRoll" rs = let res = unions rs in let _ = map rangeToInt (toList res) in res
+    return $ fromList (map (IntInterval.toInterval.IntInterval.singleton) [1..max])
+imagePrim "WRoll" rs = let res = unions rs in let _ = map rangeToInt (toList res) in return res
 
 
-range :: Environment Dist -> Expr -> [IntervalSet Double]
-range env (Pair p) = range env (fst p) ++ range env (snd p)
-range _ (Number n) = [singleton $ Finite n <=..<= Finite n]
+range :: Environment Dist -> Expr -> M [IntervalSet Double]
+range env (Pair p) =
+  do
+    x <- range env (fst p)
+    y <- range env (snd p)
+    return (x ++ y)
+range _ (Number n) = return [singleton $ Finite n <=..<= Finite n]
 range env (If _ e1 e2) =
-  if length rs1 == length rs2 then zipWith union rs1 rs2
+  do
+    rs1 <- range env e1
+    rs2 <- range env e2
+    if length rs1 == length rs2 then return $ zipWith union rs1 rs2
     else error $ show e1 ++ ", " ++ show e2 ++ ", don't have same dimension"
   -- this is a upperbound estimate, can be calculate more accurate by using the lattices library.
-  where
-    rs1 = range env e1
-    rs2 = range env e2
-range env (Apply (Variable n) es) = imageFunc n (map (range env) es)
-range env (Variable x) = let d = find env x in imageDist env d
-range env Loop {} = [Intervals.whole] --unable to calculate, for safety, return the upperbound
+range env (Apply (Variable n) es) = 
+  do
+    rs <- mapM (range env) es
+    imageFunc n rs
 
-typePrim :: Environment Dist -> Dist -> Type
+range env (Variable x) = let d = find env x in imageDist env d
+range env Loop {} = return [Intervals.whole] --unable to calculate, for safety, return the upperbound
+
+typePrim :: Environment Dist -> Dist -> M Type
 typePrim env (PrimD t id es)
-  | t == DZ = Count
+  | t == DZ = return Count
   | id == "Normal" =
-    if Intervals.member 0 (last rs) then Count else Uncount
+    do
+      rs' <- mapM (range env) es
+      let rs = map (f id) rs'
+      if Intervals.member 0 (last rs) then return Count else return Uncount
 
   | id == "Uniform" =
-    if Intervals.null (intersections rs)
-      then Uncount else Count
+      do
+        rs' <- mapM (range env) es
+        let rs = map (f id) rs'
+        if Intervals.null (intersections rs)
+        then return Uncount else return Count
   where
-    rs = map (f id.range env) es
     f dist rs =
       case dist of
         "WRoll" -> if length rs == 2 then head rs else error $ show es ++ ", arguement of WRoll distribution can only be pair"
@@ -529,9 +604,9 @@ data Type = Count | Uncount
   deriving Eq
 
 
-nn :: Environment Dist -> Expr -> Maybe Type
-nn env (Variable x) = Just $ typePrim env (find env x)
-nn env (Number  _) = Just Count
+nn :: Environment Dist -> Expr -> M (Maybe Type)
+nn env (Variable x) = fmap Just (typePrim env (find env x))
+nn env (Number  _) = return $ Just Count
 nn env (If e1 e2 e3) =
   do t1 <- nn env e2
      t2 <- nn env e3
@@ -541,13 +616,16 @@ nn env (Apply (Variable "+") xs)
   | null $ freeVars (head xs) = nn env (last xs)
   | null $ freeVars (last xs) = nn env (head xs)
   | otherwise = nn env (Pair (head xs, last xs))
-nn _ _ = Just Count
+nn _ _ = return $ Just Count
 
-ac :: Dist -> Bool
-ac d = isJust $ ac' empty_env d
+ac :: Dist -> M Bool
+ac d = 
+  do
+    x <- ac' empty_env d
+    return (isJust x)
 
-ac' :: Environment Dist -> Dist -> Maybe Type
-ac' env d@(PrimD t _ _) = Just $ typePrim env d
+ac' :: Environment Dist -> Dist -> M (Maybe Type)
+ac' env d@(PrimD t _ _) = fmap Just (typePrim env d)
 ac' env (Return e) = nn env e
 ac' env (Score e d) = ac' env d
 ac' env (Let (Rand x d1) d2) =
@@ -595,17 +673,17 @@ instance Show Value where
   show (PDF d) = show d
   show (PairVal (x,y)) = show (x,y)
 
-obey :: Phrase -> Env -> (String, Env)
+obey :: Phrase -> Env -> IO Env
 
 obey (Calculate dist) env =
-  applyK (simplify env dist) (\v -> (print_value v, env))
+  applyK (simplify env dist) (\v -> do putStrLn $ print_value v;return env)
 
 obey (Evaluate exp) env =
-  applyK (eval env exp) (\v -> (print_value v, env))
+  applyK (eval env exp) (\v -> do putStrLn $ print_value v;return env)
 
 obey (Define def) env =
   let x = def_lhs def in
-  applyK (elabDist def env) (\env -> (print_defn env x, env))
+  applyK (elabDist def env) (\env -> (do putStrLn $ print_defn env x;return env))
 
 
-main = dialog parser obey init_env
+main = dialogm parser obey init_env
