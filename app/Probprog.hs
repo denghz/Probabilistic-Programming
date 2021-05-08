@@ -35,6 +35,8 @@ import           System.IO (stdout, stderr, hPutStrLn)
 type Ans = IO Env
 newtype M a = Mk ((a -> Ans) -> Ans)
 
+type Range = Either (IntervalSet Integer) (IntervalSet Double)
+
 applyK (Mk mx) = mx
 
 instance Monad M where
@@ -273,14 +275,6 @@ newIdent env = head $ filter (\x -> x `notElem` names env) allStrings
 isInt :: (Integral a, RealFrac b) => a -> b -> Bool
 isInt n x = round (10^fromIntegral n*(x-fromIntegral (round x)))==0
 
-makeInterval :: (Ord a) => Extended a -> Boundary -> Extended a -> Boundary -> Interval a
-makeInterval lb lbt ub ubt =
-  case (lbt, ubt) of
-    (Closed, Closed) -> lb <=..<= ub
-    (Closed, Open) -> lb <=..< ub
-    (Open, Open) -> lb <..< ub
-    (Open, Closed) -> lb <..<= ub
-
 -- Extended Real is a ring not a field
 
 -- All builtin function should be considered
@@ -292,7 +286,7 @@ imageFunc "+" rs =
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for +"
     ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for +"
     plus x y =
-      makeInterval lb lbt ub ubt
+      interval (lb,lbt) (ub,ubt)
       where
         (lbx, lbxt) = lowerBound' x
         (lby, lbyt) = lowerBound' y
@@ -309,7 +303,7 @@ imageFunc "-" rs =
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for -"
     ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for -"
     minus x y =
-      makeInterval lb lbt ub ubt
+      interval (lb, lbt) (ub, ubt)
       where
         (lbx, lbxt) = lowerBound' x
         (lby, lbyt) = lowerBound' y
@@ -326,7 +320,7 @@ imageFunc "*" rs =
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for *"
     ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for *"
     mul x y =
-      makeInterval lb lbt ub ubt
+      interval (lb, lbt) (ub, ubt)
       where
         lbx = lowerBound' x
         lby = lowerBound' y
@@ -402,7 +396,7 @@ imageFunc "~" rs =
   else return [fromList $ map neg xs]
   where
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for ~"
-    neg x = makeInterval (-ub) ubt (-lb) lbt
+    neg x = interval (-ub,ubt) (-lb,lbt)
       where
         (lb, lbt) = lowerBound' x
         (ub, ubt) = upperBound' x
@@ -412,7 +406,7 @@ imageFunc "inv" rs =
   where
     xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for inv"
     neg x = if 0 `Interval.member` x then Interval.whole
-            else makeInterval (if ub /= 0 then 1/ub else NegInf) ubt (if lb /= 0 then 1/lb else PosInf) lbt
+            else interval (if ub /= 0 then 1/ub else NegInf, ubt) (if lb /= 0 then 1/lb else PosInf, lbt)
           where
             (lb, lbt) = lowerBound' x
             (ub, ubt) = upperBound' x
@@ -450,7 +444,7 @@ imageFunc "exp" rs
   | otherwise = error "exp only accepts one argument"
   where
       expRange x
-        = makeInterval (expER lb) lbt (expER ub) ubt
+        = interval (expER lb, lbt) (expER ub ,ubt)
         where
             (lb, lbt) = lowerBound' x
             (ub, ubt) = upperBound' x
@@ -466,7 +460,7 @@ imageFunc "log" rs
         = if (lb < Finite 0) || (lb == Finite 0 && lbt == Closed) then
               error "log x is undefined when x <= 0"
           else
-              makeInterval (logER lb) lbt (logER ub) ubt
+              interval (logER lb, lbt) (logER ub, ubt)
         where
             (lb, lbt) = lowerBound' x
             (ub, ubt) = upperBound' x
@@ -501,7 +495,7 @@ imageFunc id rs
           let (lb, lbt) = getLb (fst res)
           let (ub, ubt) = getUb (snd res)
           Py.finalize 
-          return $ makeInterval lb lbt ub ubt
+          return $ interval (lb, lbt) (ub, ubt)
         where
           (lb, lbt) = lowerBound' x
           (ub, ubt) = upperBound' x
