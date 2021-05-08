@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Probprog(main,eval,init_env) where
-import Parsing(dialogm, print_defn, print_value)
+import Parsing(dialog, print_defn, print_value)
 import Syntax
 import Parser
 import qualified Data.IntervalSet as Intervals(null, member, whole, span)
@@ -685,4 +685,4 @@ obey (Define def) env =
   applyK (elabDist def env) (\env -> (do putStrLn $ print_defn env x;return env))
 
 
-main = dialogm parser obey init_env
+main = dialog parser obey init_env

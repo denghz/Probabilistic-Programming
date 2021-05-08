@@ -2,7 +2,7 @@
 
 module Parsing(nextch, switch, star, incln, make_kwlookup,
     scan, eat, (<+>), p_fail, p_list0, p_list,
-    print_value, print_defn, dialog, dialogm, printStrLn, showlist, joinwith, lex_string, parse, 
+    print_value, print_defn, dialog, printStrLn, showlist, joinwith, lex_string, parse, 
     Lexer, Parser, Syntax) where
 
 import Environment
@@ -193,15 +193,8 @@ p_list0 p sep = p_list p sep <+> return []
 type Syntax t a = (Lexer t, Parser t a)
 
 dialog :: (Eq t, Show t) => 
-  Syntax t a -> (a -> s -> (String, s)) -> s -> IO ()
-dialog syntax obey = dialogm syntax obey'
-  where 
-    obey' e s = 
-      let (out, s') = obey e s in do printStrLn out; return s'
-
-dialogm :: (Eq t, Show t) => 
     Syntax t a -> (a -> s -> IO s) -> s -> IO ()
-dialogm syntax obey init =
+dialog syntax obey init =
   do 
     args <- System.Environment.getArgs
     arg_loop init args
