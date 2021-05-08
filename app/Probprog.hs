@@ -67,11 +67,11 @@ notDeterVars env e =
 freeVars :: Expr -> [Ident]
 freeVars (Variable x) =
   [x | x /= "true" || x /= " false"]
-freeVars (If e1 e2 e3) = freeVars e1 ++ freeVars e2 ++ freeVars e3
+freeVars (If e1 e2 e3) = freeVars e1 <> freeVars e2 <> freeVars e3
 freeVars (Apply f es) = concatMap freeVars es
-freeVars (Pair (x, y)) = freeVars x ++ freeVars y
+freeVars (Pair (x, y)) = freeVars x <> freeVars y
 freeVars (Loop bs1 e1 e2 bs2) =
-  concatMap freeVars es1 ++ filerLocal (freeVars e1 ++ freeVars e2 ++ concatMap freeVars es2)
+  concatMap freeVars es1 <> filerLocal (freeVars e1 <> freeVars e2 <> concatMap freeVars es2)
   where
     (xs1, es1) = unzip bs1
     (xs2, es2) = unzip bs2
@@ -126,7 +126,7 @@ eval env (Loop bs1 e1 e2 bs2)  =
           _ -> error "boolean required in while loop"
 
 eval e _ =
-  error ("can't evaluate " ++ show e)
+  error ("can't evaluate " <> show e)
 
 simplify :: Env -> Dist -> M Dist
 simplify e d = simplify' e (standardise d)
@@ -161,7 +161,7 @@ valToTree (Real n) = Number n
 valToTree (BoolVal True) = Variable "true"
 valToTree (BoolVal False) = Variable "false"
 valToTree (PairVal (v1, v2)) =  Pair (valToTree v1, valToTree v2)
-valToTree v = error ("\ncannot convert the value back to Syntax Tree, " ++ show v)
+valToTree v = error ("\ncannot convert the value back to Syntax Tree, " <> show v)
 
 
 partialEval' :: Env -> Expr -> M Expr
@@ -267,7 +267,7 @@ substitute env e = e
 newIdent :: Environment a -> Ident
 newIdent env = head $ filter (\x -> x `notElem` names env) allStrings
   where
-    allStrings = [c:s | s <- "":allStrings, c <- ['a'..'z'] ++ ['0'..'9']]
+    allStrings = [c:s | s <- "":allStrings, c <- ['a'..'z'] <> ['0'..'9']]
 
 --Returns if x is an int to n decimal places
 isInt :: (Integral a, RealFrac b) => a -> b -> Bool
@@ -475,12 +475,12 @@ imageFunc "log" rs
             logER (Finite n) = Finite (log n)
 imageFunc id rs
   | id `elem` ["sin", "cos", "tan"] =
-    if length rs /= 1 then error ("only 1 arguement allowed for " ++ id)
+    if length rs /= 1 then error ("only 1 arguement allowed for " <> id)
     else if length (head rs) == 1 then Mk(\k ->
       (do
         rs' <- mapM (triRange id) (toList (head (head rs)))
         k [fromList rs']))
-    else error (id ++ " only accepts one argument")
+    else error (id <> " only accepts one argument")
     where 
       triRange id x = 
         do
@@ -489,7 +489,7 @@ imageFunc id rs
           pythonpath <- Py.getPath
           T.putStrLn ("Python path at startup is: " <> pythonpath <> "\n")
           -- Appending so that the user's PYTHONPATH variable (ready by python) can go first.
-          let updatedPytonpath = pythonpath <> ":/home/dhz/.local/lib/python3.6/site-packages:/usr/local/lib/python3.6/dist-packages:/usr/lib/python3/dist-packages:./test"
+          let updatedPytonpath = pythonpath <> ":/home/dhz/.local/lib/python3.6/site-packages:/usr/local/lib/python3.6/dist-packages:/usr/lib/python3/dist-packages:./src"
           T.putStrLn ("Setting Python path to: " <> updatedPytonpath <> "\n")
           Py.setPath updatedPytonpath 
           let calRanges = call "functionRange" "calRange"
@@ -525,7 +525,7 @@ imageDist env (PrimD _ id es) =
       x' <- imagePrim id (map f rs)
       return [x']
     where
-    f rs = if length rs == 1 then head rs else error $ show es ++ ", arguement of distribution cannot be tuple"
+    f rs = if length rs == 1 then head rs else error $ show es <> ", arguement of distribution cannot be tuple"
 
 rangeToInt :: (Integral b,  RealFrac a) => Interval a -> b
 rangeToInt r =
@@ -560,14 +560,14 @@ range env (Pair p) =
   do
     x <- range env (fst p)
     y <- range env (snd p)
-    return (x ++ y)
+    return (x <> y)
 range _ (Number n) = return [singleton $ Finite n <=..<= Finite n]
 range env (If _ e1 e2) =
   do
     rs1 <- range env e1
     rs2 <- range env e2
     if length rs1 == length rs2 then return $ zipWith union rs1 rs2
-    else error $ show e1 ++ ", " ++ show e2 ++ ", don't have same dimension"
+    else error $ show e1 <> ", " <> show e2 <> ", don't have same dimension"
   -- this is a upperbound estimate, can be calculate more accurate by using the lattices library.
 range env (Apply (Variable n) es) = 
   do
@@ -595,9 +595,9 @@ typePrim env (PrimD t id es)
   where
     f dist rs =
       case dist of
-        "WRoll" -> if length rs == 2 then head rs else error $ show es ++ ", arguement of WRoll distribution can only be pair"
-        _ -> if length rs == 1 then head rs else error $ show es ++ ", arguement of" ++ dist ++ " distribution cannot be tuple"
-typePrim _ d = error $ show d ++ " is not a prim dist"
+        "WRoll" -> if length rs == 2 then head rs else error $ show es <> ", arguement of WRoll distribution can only be pair"
+        _ -> if length rs == 1 then head rs else error $ show es <> ", arguement of" <> dist <> " distribution cannot be tuple"
+typePrim _ d = error $ show d <> " is not a prim dist"
 
 
 data Type = Count | Uncount
@@ -611,7 +611,7 @@ nn env (If e1 e2 e3) =
   do t1 <- nn env e2
      t2 <- nn env e3
      return (if t1 == t2 then t1
-              else error $ show (If e1 e2 e3) ++ ", doesn't have the same type in both branches")
+              else error $ show (If e1 e2 e3) <> ", doesn't have the same type in both branches")
 nn env (Apply (Variable "+") xs)
   | null $ freeVars (head xs) = nn env (last xs)
   | null $ freeVars (last xs) = nn env (head xs)
