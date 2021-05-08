@@ -308,7 +308,7 @@ imageFunc "+" args
 imageFunc "-" args
   | length args /= 2 = error "only 2 arguement allowed for -"
   | otherwise = return [(fromList [minus rx ry | rx <- toList x, ry <- toList y], t)]
-  where 
+  where
     xs = head args
     ys = last args
     (x, xt) = if length x == 1 then head xs else error "tuple arguement not allowed for -"
@@ -372,7 +372,7 @@ imageFunc "<=" args
       | x >! y = singleton (Finite 0 <=..<= Finite 0)
       | x <=! y = singleton (Finite 1 <=..<= Finite 1)
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-      
+
 imageFunc ">" args
   | length arg /= 2 = error "only 2 arguement allowed for >"
   | otherwise = return [(unions [gt x' y' | x' <- toList x, y' <- toList y], C)]
@@ -436,7 +436,7 @@ imageFunc "~" args
         (lb, lbt) = lowerBound' x
         (ub, ubt) = upperBound' x
 
-imageFunc "inv" args 
+imageFunc "inv" args
   | length args /= 1 = error "only 1 arguement allowed for inv"
   | otherwise = return [(fromList $ map inv (toList x), xt)]
   where
@@ -464,20 +464,24 @@ imageFunc "floor" args
     xs = head args
     (x, xt) = head xs
     intRanges
-      = map (toIntervalSet . IntInterval.fromIntervalUnder)
-          $ toList x
-    toIntervalSet x
-      = if lb /= NegInf && ub /= PosInf then
+      = map toIntervalSet (toList x)
+    toIntervalSet x =
+      if lb /= NegInf && ub /= PosInf then
             fromList
               $ map
                   (IntInterval.toInterval . IntInterval.singleton)
                   [(fromFinite lb) .. (fromFinite ub)]
-        else
-            singleton $ IntInterval.toInterval x
+      else
+            singleton $ IntInterval.toInterval x'
       where
-          lb = IntInterval.lowerBound x
-          ub = IntInterval.upperBound x
-          fromFinite (Finite n) = n
+        x' = IntInterval.fromIntervalUnder x
+        lb = IntInterval.lowerBound x' + 
+            let (lb', lbt') = lowerBound' x in 
+              if checkInt lb' && lbt' == Closed then (-1) else 0
+        ub = IntInterval.upperBound x'
+        fromFinite (Finite n) = n
+        checkInt (Finite n) = isInt 10 n
+        checkInt _ = False 
 
 imageFunc "exp" args
   | length args /= 1 = error "only 1 arguement allowed for exp"
@@ -522,10 +526,10 @@ imageFunc id args
         rs' <- mapM (triRange id) (toList x)
         k [(fromList rs', xt)]))
     else error (id <> " only accepts one argument")
-    where 
+    where
       xs = head args
       (x, xt) = head xs
-      triRange id x = 
+      triRange id x =
         do
           cwd <- getCurrentDirectory
           Py.initialize
@@ -533,17 +537,17 @@ imageFunc id args
           T.putStrLn ("Python path at startup is: " <> pythonpath <> "\n")
           let updatedPytonpath = pythonpath <> ":/home/dhz/.local/lib/python3.6/site-packages:/usr/local/lib/python3.6/dist-packages:/usr/lib/python3/dist-packages:./src"
           T.putStrLn ("Setting Python path to: " <> updatedPytonpath <> "\n")
-          Py.setPath updatedPytonpath 
+          Py.setPath updatedPytonpath
           let calRanges = call "functionRange" "calRange"
-          res <- calRanges 
-                  [arg (T.pack $ toUpper (head id) : tail id),  
+          res <- calRanges
+                  [arg (T.pack $ toUpper (head id) : tail id),
                   arg (mapER lb),
                   arg (T.pack $ show lbt),
                   arg (mapER ub),
                   arg (T.pack $ show ubt) ] []
           let (lb, lbt) = getLb (fst res)
           let (ub, ubt) = getUb (snd res)
-          Py.finalize 
+          Py.finalize
           return $ interval (lb, lbt) (ub, ubt)
         where
           (lb, lbt) = lowerBound' x
@@ -557,95 +561,100 @@ imageFunc id args
 
 
 
-imageDist :: Environment Dist -> Dist -> M [IntervalSet Double]
+imageDist :: Environment Dist -> Dist -> M [Range]
 imageDist env (Return e) = range env e
 imageDist env (Let (Rand x d1) d2) = imageDist (define env x d1) d2
 imageDist env (Score e d) = imageDist env d -- unable to calculate, for safety, return the upperbound
-imageDist env (PrimD _ id es) = 
-    do 
+imageDist env (PrimD _ id es) =
+    do
       rs <- mapM (range env) es
-      x' <- imagePrim id (map f rs)
-      return [x']
+      xs' <- imagePrim id (map f rs)
+      return [head xs']
     where
     f rs = if length rs == 1 then head rs else error $ show es <> ", arguement of distribution cannot be tuple"
 
-rangeToInt :: (Integral b,  RealFrac a) => Interval a -> b
-rangeToInt r =
-      let n = do
-                n <- Data.Interval.extractSingleton r
-                if isInt 10 n then return $ round n else Nothing
-      in
-        case n of
-          Just n -> n
-          Nothing -> error "Roll/WRoll distribution only accept Integer parameter"
 
-imagePrim :: Ident -> [IntervalSet Double] -> M (IntervalSet Double)
+imagePrim :: Ident -> [Range] -> M [Range]
 imagePrim "Normal" rs =
   if length rs /= 2 then error "Normal distribution can only have two parameters."
   else
-    let variance = last rs in let mean = head rs in
+    let (variance, _) = last rs in let mean = head rs in
       if variance `isSubsetOf` singleton (Finite 0 <=..<= Finite 0)
-        then return mean else return Intervals.whole
+        then return [mean] else return [(Intervals.whole, UC)]
 imagePrim "Uniform" rs =
   if length rs /= 2 then error "Unifrom distribution can only have two parameters."
   else
-    return $ singleton (Intervals.span (unions rs)) --convex hull
+    let (isx, xt) = head rs in
+    let (isy, yt) = last rs in
+    let res = [(singleton (Intervals.span (isx `union` isy)), UC)] in
+    if xt == yt && xt == C then return $ (intersections [isx, isy], C):res
+    else return res  
 imagePrim "Roll" rs =
   if length rs /= 1 then error "Roll distribution can only have on parameter"
-  else let max = maximum $ map rangeToInt (toList $ head rs)   in
-    return $ fromList (map (IntInterval.toInterval.IntInterval.singleton) [1..max])
-imagePrim "WRoll" rs = let res = unions rs in let _ = map rangeToInt (toList res) in return res
+  else 
+    let ub = upperBound $ head (toDescList $ fst (head rs))
+    in case ub of
+        PosInf -> return [(Intervals.whole, C)]
+        Finite n -> return [(fromList (map (IntInterval.toInterval.IntInterval.singleton) [1..floor n]), C)]
+    
+imagePrim "WRoll" rs = let res = unions (map fst rs) in return [(res,C)]
 
 
-range :: Environment Dist -> Expr -> M [IntervalSet Double]
+range :: Environment Dist -> Expr -> M [Range]
 range env (Pair p) =
   do
     x <- range env (fst p)
     y <- range env (snd p)
     return (x <> y)
-range _ (Number n) = return [singleton $ Finite n <=..<= Finite n]
+range _ (Number n) = return [(singleton $ Finite n <=..<= Finite n, C)]
 range env (If _ e1 e2) =
   do
     rs1 <- range env e1
     rs2 <- range env e2
-    if length rs1 == length rs2 then return $ zipWith union rs1 rs2
+    let (is1, ts1) = unzip rs1
+    let (is2, ts2) = unzip rs2
+    let is = zipWith union is1 is2
+    let ts = zipWith (\t1 t2 -> if t1 == C && t1 == t2 then C else UC) ts1 ts2
+    if length rs1 == length rs2 then return $ zip is ts
     else error $ show e1 <> ", " <> show e2 <> ", don't have same dimension"
   -- this is a upperbound estimate, can be calculate more accurate by using the lattices library.
-range env (Apply (Variable n) es) = 
+range env (Apply (Variable n) es) =
   do
     rs <- mapM (range env) es
     imageFunc n rs
 
 range env (Variable x) = let d = find env x in imageDist env d
-range env Loop {} = return [Intervals.whole] --unable to calculate, for safety, return the upperbound
+range env Loop {} = return [(Intervals.whole, UC)] --unable to calculate, for safety, return the upperbound
 
 typePrim :: Environment Dist -> Dist -> M Type
 typePrim env (PrimD t id es)
-  | t == DZ = return Count
+  | t == DZ = return C
   | id == "Normal" =
     do
       rs' <- mapM (range env) es
       let rs = map (f id) rs'
-      if Intervals.member 0 (last rs) then return Count else return Uncount
+      
+      if Intervals.member 0 (last rs) then return C else return UC
 
   | id == "Uniform" =
       do
         rs' <- mapM (range env) es
         let rs = map (f id) rs'
         if Intervals.null (intersections rs)
-        then return Uncount else return Count
+        then return U else return C
   where
     f dist rs =
       case dist of
         "WRoll" -> if length rs == 2 then head rs else error $ show es <> ", arguement of WRoll distribution can only be pair"
         _ -> if length rs == 1 then head rs else error $ show es <> ", arguement of" <> dist <> " distribution cannot be tuple"
+
 typePrim _ d = error $ show d <> " is not a prim dist"
 
 
 
 nn :: Environment Dist -> Expr -> M (Maybe Type)
 nn env (Variable x) = fmap Just (typePrim env (find env x))
-nn env (Number  _) = return $ Just Count
+nn env (Number  _) = return $ Just C
 nn env (If e1 e2 e3) =
   do t1 <- nn env e2
      t2 <- nn env e3
@@ -655,10 +664,10 @@ nn env (Apply (Variable "+") xs)
   | null $ freeVars (head xs) = nn env (last xs)
   | null $ freeVars (last xs) = nn env (head xs)
   | otherwise = nn env (Pair (head xs, last xs))
-nn _ _ = return $ Just Count
+nn _ _ = return $ Just C
 
 ac :: Dist -> M Bool
-ac d = 
+ac d =
   do
     x <- ac' empty_env d
     return (isJust x)
