@@ -1,0 +1,84 @@
+from wolframclient.evaluation import WolframLanguageSession
+from wolframclient.language import wl, wlexpr
+from wolframclient.deserializers import WXFConsumer, binary_deserialize
+from wolframclient.serializers import export, wolfram_encoder
+import wolframclient
+import time
+import msgpack
+
+class InEqConsumer(WXFConsumer):
+    ineq = wl.Inequality
+    lessEq = wl.LessEqual
+    less = wl.Less
+    gtEq = wl.GreaterEqual
+    gt = wl.Greater
+    def build_function(self, head, args, **kwargs):
+        with WolframLanguageSession() as session:
+            def f1(x):
+                return session.evaluate(wl.N(x))
+            f2 = lambda x:'Closed' if x == self.lessEq else 'Open'
+            if head == self.ineq and len(args) == 5:
+                lb = f1(args[0])
+                lbt = f2(args[1])
+                ub = f1(args[-1])
+                ubt = f2(args[-2])
+                return ((lb,lbt), (ub,ubt))
+            elif head == self.lessEq or head == self.less:
+                if len(args) == 3:
+                    lb = f1(args[0])
+                    ub = f1(args[-1])
+                    lbt = ubt = 'Closed' if head == self.lessEq else 'Open'
+                    return ((lb,lbt), (ub,ubt))
+                elif len(args) == 2:
+                    if isinstance(args[0], wolframclient.language.expression.WLSymbol):
+                        b = f1(args[1])
+                        bt = 'Closed' if head == self.lessEq else 'Open'
+                        return (None, (b,bt))
+                    else:
+                        b = f1(args[0])
+                        bt = 'Closed' if head == self.lessEq else 'Open'
+                        return ((b,bt), None)
+                else:
+                    return super().build_function(head, args, **kwargs)
+            elif head == self.gtEq or head == self.gt:
+                if len(args) == 3:
+                    ub = f1(args[0])
+                    lb = f1(args[-1])
+                    lbt = ubt = 'Closed' if head == self.lessEq else 'Open'
+                    return ((lb,lbt), (ub,ubt))
+                elif len(args) == 2:
+                    if isinstance(args[1], wolframclient.language.expression.WLSymbol):
+                        b = f1(args[0])
+                        bt = 'Closed' if head == self.lessEq else 'Open' 
+                        return (None, (b,bt))
+                    else:
+                        b = f1(args[1])
+                        bt = 'Closed' if head == self.lessEq else 'Open' 
+                        return ((b,bt), None)
+                else:
+                    return super().build_function(head, args, **kwargs)
+            else:
+                return super().build_function(head, args, **kwargs)
+            
+
+
+def calRange(f="Sin", lb=0.0, lbt='Open', ub=0.5, ubt='Open'):
+    with WolframLanguageSession() as session:
+        f = wlexpr(f)
+        lbt = '<' if lbt == 'Open' else '<='
+        ubt = '<' if ubt == 'Open' else '<='
+        lb = '-Infinity' if lb == None else str(lb)
+        ub = 'Infinity' if ub == None else str(ub)
+        ineq = wlexpr(lb+lbt+'x'+ubt+ub)
+        expr = wl.FunctionRange([f(wl.x), ineq], wl.x, wl.y)
+        wxf = session.evaluate_wxf(expr)
+        res = binary_deserialize(wxf, consumer=InEqConsumer())
+        session.terminate()
+        return res
+
+def calRanges(f, l):
+    res = []
+    for x in l:
+        res.append(calRange(f, *x))
+    return res
+
