@@ -13,6 +13,8 @@ import Environment
 import Control.Monad(liftM, ap)
 import Data.Maybe(isJust)
 import Data.Char
+import Data.Bifunctor
+import Data.Bitraversable
 
 import qualified CPython as Py
 import qualified CPython.Protocols.Object as Py
@@ -35,8 +37,12 @@ import           System.IO (stdout, stderr, hPutStrLn)
 type Ans = IO Env
 newtype M a = Mk ((a -> Ans) -> Ans)
 
-type Range = Either (IntervalSet Integer) (IntervalSet Double)
+type Range =  (IntervalSet Double, Type) -- Boundary of Integer Range is Integer
 
+data Type = C | UC
+  deriving (Eq, Show)
+
+applyK :: M a -> (a -> Ans) -> Ans
 applyK (Mk mx) = mx
 
 instance Monad M where
@@ -278,32 +284,37 @@ isInt n x = round (10^fromIntegral n*(x-fromIntegral (round x)))==0
 -- Extended Real is a ring not a field
 
 -- All builtin function should be considered
-imageFunc :: Ident -> [[IntervalSet Double]] -> M [IntervalSet Double]
-imageFunc "+" rs =
-  if length rs /= 2 then error "only 2 arguement allowed for +"
-  else return [fromList [plus x y | x <- xs, y <- ys]]
+imageFunc :: Ident -> [[Range]] -> M [Range]
+imageFunc "+" args
+  | length args /= 2 = error "only 2 arguement allowed for +"
+  | otherwise = return [(fromList [plus rx ry | rx <- toList x, ry <- toList y], t)]
   where
-    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for +"
-    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for +"
-    plus x y =
-      interval (lb,lbt) (ub,ubt)
+    xs = head args
+    ys = last args
+    (x, xt) = if length x == 1 then head xs else error "tuple arguement not allowed for +"
+    (y, yt) = if length y == 1 then last ys else error "tuple arguement not allowed for +"
+    t = if xt == yt && xt == C then C else UC
+    plus rx ry = interval (lb,lbt) (ub,ubt)
       where
-        (lbx, lbxt) = lowerBound' x
-        (lby, lbyt) = lowerBound' y
-        (ubx, ubxt) = upperBound' x
-        (uby, ubyt) = upperBound' y
+        (lbx, lbxt) = lowerBound' rx
+        (lby, lbyt) = lowerBound' ry
+        (ubx, ubxt) = upperBound' rx
+        (uby, ubyt) = upperBound' ry
         lb = lbx + lby
         ub = ubx + uby
         lbt = if Open `elem` [lbxt, lbyt] then Open else Closed
         ubt = if Open `elem` [ubxt, ubyt] then Open else Closed
-imageFunc "-" rs =
-  if length rs /= 2 then error "only 2 arguement allowed for -"
-  else return [fromList [minus x y | x <- xs, y <- ys]]
-  where
-    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for -"
-    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for -"
-    minus x y =
-      interval (lb, lbt) (ub, ubt)
+
+imageFunc "-" args
+  | length args /= 2 = error "only 2 arguement allowed for -"
+  | otherwise = return [(fromList [minus rx ry | rx <- toList x, ry <- toList y], t)]
+  where 
+    xs = head args
+    ys = last args
+    (x, xt) = if length x == 1 then head xs else error "tuple arguement not allowed for -"
+    (y, yt) = if length y == 1 then head ys else error "tuple arguement not allowed for -"
+    t = if xt == yt && xt == C then C else UC
+    minus x y = interval (lb, lbt) (ub, ubt)
       where
         (lbx, lbxt) = lowerBound' x
         (lby, lbyt) = lowerBound' y
@@ -313,12 +324,16 @@ imageFunc "-" rs =
         lb = lbx - uby
         ubt = if Open `elem` [ubxt, lbyt] then Open else Closed
         lbt = if Open `elem` [lbxt, ubyt] then Open else Closed
-imageFunc "*" rs =
-  if length rs /= 2 then error "only 2 arguement allowed for -"
-  else return [fromList [mul x y | x <- xs, y <- ys]]
+
+imageFunc "*" args
+  | length args /= 2 = error "only 2 arguement allowed for *"
+  | otherwise = return [(fromList [mul rx ry | rx <- toList x, ry <- toList y], t)]
   where
-    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for *"
-    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for *"
+    xs = head args
+    ys = last args
+    (x, xt) = if length x == 1 then head xs else error "tuple arguement not allowed for *"
+    (y, yt) = if length y == 1 then head ys else error "tuple arguement not allowed for *"
+    t = if xt == yt && xt == C then C else UC
     mul x y =
       interval (lb, lbt) (ub, ubt)
       where
@@ -331,151 +346,185 @@ imageFunc "*" rs =
         (lb, lbt1, lbt2) = minimum bds
         ubt = if Open `elem` [ubt1, ubt2] then Open else Closed
         lbt = if Open `elem` [lbt1, lbt2] then Open else Closed
-imageFunc "<" rs =
-  if length rs /= 2 then error "only 2 arguement allowed for <"
-  else return [unions [less x y | x <- xs, y <- ys]]
+
+imageFunc "<" args
+  | length args /= 2 = error "only 2 arguement allowed for <"
+  | otherwise  = return [(unions [less x' y' | x' <- toList x, y' <- toList y], C)]
   where
-    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for <"
-    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for <"
+    xs = head args
+    ys = last args
+    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for <"
+    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for <"
     less x y
       | x >=! y = singleton (Finite 0 <=..<= Finite 0)
       | x <! y = singleton (Finite 1 <=..<= Finite 1)
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-imageFunc "<=" rs =
-  if length rs /= 2 then error "only 2 arguement allowed for <="
-  else return [unions [lessEq x y | x <- xs, y <- ys]]
+
+imageFunc "<=" args
+  | length arg /= 2 = error "only 2 arguement allowed for <="
+  | otherwise = return [(unions [lessEq x' y' | x' <- toList x, y' <- toList y], C)]
   where
-    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for <="
-    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for <="
+    xs = head args
+    ys = last args
+    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for <="
+    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for <="
     lessEq x y
       | x >! y = singleton (Finite 0 <=..<= Finite 0)
       | x <=! y = singleton (Finite 1 <=..<= Finite 1)
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-imageFunc ">" rs =
-  if length rs /= 2 then error "only 2 arguement allowed for >"
-  else return [unions [gt x y | x <- xs, y <- ys]]
+      
+imageFunc ">" args
+  | length arg /= 2 = error "only 2 arguement allowed for >"
+  | otherwise = return [(unions [gt x' y' | x' <- toList x, y' <- toList y], C)]
   where
-    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for >"
-    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for >"
+    xs = head args
+    ys = last args
+    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for >"
+    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for >"
     gt x y
       | x <=! y = singleton (Finite 0 <=..<= Finite 0)
       | x >! y = singleton (Finite 1 <=..<= Finite 1)
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-imageFunc ">=" rs =
-  if length rs /= 2 then error "only 2 arguement allowed for >="
-  else return [unions [gtEq x y | x <- xs, y <- ys]]
+
+imageFunc ">=" args
+  | length arg /= 2 = error "only 2 arguement allowed for >"
+  | otherwise = return [(unions [gtEq x' y' | x' <- toList x, y' <- toList y], C)]
   where
-    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for >="
-    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for >="
+    xs = head args
+    ys = last args
+    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for >="
+    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for >="
     gtEq x y
       | x <! y = singleton (Finite 0 <=..<= Finite 0)
       | x >=! y = singleton (Finite 1 <=..<= Finite 1)
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-imageFunc "=" rs =
-  if length rs /= 2 then error "only 2 arguement allowed for ="
-  else return [unions [eq x y | x <- xs, y <- ys]]
+
+imageFunc "=" args
+  | length arg /= 2 = error "only 2 arguement allowed for ="
+  | otherwise = return [(unions [eq x' y' | x' <- toList x, y' <- toList y], C)]
   where
-    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for ="
-    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for ="
+    xs = head args
+    ys = last args
+    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for ="
+    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for ="
     eq x y
       | x /=! y = singleton (Finite 0 <=..<= Finite 0)
       | x ==! y = singleton (Finite 1 <=..<= Finite 1)
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-imageFunc "<>" rs =
-  if length rs /= 2 then error "only 2 arguement allowed for <>"
-  else return [unions [notEq x y | x <- xs, y <- ys]]
+
+imageFunc "<>" args
+  | length arg /= 2 = error "only 2 arguement allowed for <>"
+  | otherwise = return [(unions [notEq x' y' | x' <- toList x, y' <- toList y], C)]
   where
-    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for <>"
-    ys = if length (last rs) == 1 then toList (last (head rs)) else error "tuple arguement not allowed for <>"
+    xs = head args
+    ys = last args
+    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for <>"
+    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for <>"
     notEq x y
       | x ==! y = singleton (Finite 0 <=..<= Finite 0)
       | x /=! y = singleton (Finite 1 <=..<= Finite 1)
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-imageFunc "~" rs =
-  if length rs /= 1 then error "only 1 arguement allowed for ~"
-  else return [fromList $ map neg xs]
+
+imageFunc "~" args
+  | length args /= 1 = error "only 1 arguement allowed for ~"
+  | otherwise = return [(fromList $ map neg (toList x), xt)]
   where
-    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for ~"
+    xs = head args
+    (x, xt) = if length (head args) == 1 then head xs else error "tuple arguement not allowed for ~"
     neg x = interval (-ub,ubt) (-lb,lbt)
       where
         (lb, lbt) = lowerBound' x
         (ub, ubt) = upperBound' x
-imageFunc "inv" rs =
-  if length rs /= 1 then error "only 1 arguement allowed for inv"
-  else return [fromList $ map neg xs]
+
+imageFunc "inv" args 
+  | length args /= 1 = error "only 1 arguement allowed for inv"
+  | otherwise = return [(fromList $ map inv (toList x), xt)]
   where
-    xs = if length (head rs) == 1 then toList (head (head rs)) else error "tuple arguement not allowed for inv"
-    neg x = if 0 `Interval.member` x then Interval.whole
-            else interval (if ub /= 0 then 1/ub else NegInf, ubt) (if lb /= 0 then 1/lb else PosInf, lbt)
+    xs = head args
+    (x, xt) = if length (head args) == 1 then head xs else error "tuple arguement not allowed for inv"
+    inv x = if 0 `Interval.member` x then Interval.whole
+            else interval (if ub/=0 then 1/ub else NegInf, ubt) (if lb/=0 then 1/lb else PosInf, lbt)
           where
             (lb, lbt) = lowerBound' x
             (ub, ubt) = upperBound' x
-imageFunc "fst" rs
-  | length rs /= 1 = error "only 1 arguement allowed for fst"
-  | length (head rs) == 2 = return [head (head rs)]
+
+imageFunc "fst" args
+  | length args /= 1 = error "only 1 arguement allowed for fst"
+  | length (head args) == 2 = return [head (head args)]
   | otherwise = error "fst only accepts pair argument"
-imageFunc "snd" rs
-  | length rs /= 1 = error "only 1 arguement allowed for snd"
-  | length (head rs) == 2 = return [last (head rs)]
+imageFunc "snd" args
+  | length args /= 1 = error "only 1 arguement allowed for snd"
+  | length (head args) == 2 = return [last (head args)]
   | otherwise = error "snd only accepts pair argument"
-imageFunc "floor" rs
-  | length rs /= 1 = error "only 1 arguement allowed for floor"
-  | length (head rs) == 1 = return [unions intRanges]
+imageFunc "floor" args
+  | length args /= 1 = error "only 1 arguement allowed for floor"
+  | length (head args) == 1 = return [(unions intRanges, C)]
   | otherwise = error "floor only accepts one argument"
   where
-      intRanges
-        = map (toIntervalSet . IntInterval.fromIntervalUnder)
-            $ toList (head (head rs))
-      toIntervalSet x
-        = if lb /= NegInf && ub /= PosInf then
-              fromList
-                $ map
-                    (IntInterval.toInterval . IntInterval.singleton)
-                    [(fromFinite lb) .. (fromFinite ub)]
-          else
-              singleton $ IntInterval.toInterval x
-        where
-            lb = IntInterval.lowerBound x
-            ub = IntInterval.upperBound x
-            fromFinite (Finite n) = n
-imageFunc "exp" rs
-  | length rs /= 1 = error "only 1 arguement allowed for exp"
-  | length (head rs) == 1 = return [fromList $ map expRange (toList (head (head rs)))]
+    xs = head args
+    (x, xt) = head xs
+    intRanges
+      = map (toIntervalSet . IntInterval.fromIntervalUnder)
+          $ toList x
+    toIntervalSet x
+      = if lb /= NegInf && ub /= PosInf then
+            fromList
+              $ map
+                  (IntInterval.toInterval . IntInterval.singleton)
+                  [(fromFinite lb) .. (fromFinite ub)]
+        else
+            singleton $ IntInterval.toInterval x
+      where
+          lb = IntInterval.lowerBound x
+          ub = IntInterval.upperBound x
+          fromFinite (Finite n) = n
+
+imageFunc "exp" args
+  | length args /= 1 = error "only 1 arguement allowed for exp"
+  | length (head args) == 1 = return [(fromList $ map expRange (toList x), xt)]
   | otherwise = error "exp only accepts one argument"
   where
-      expRange x
-        = interval (expER lb, lbt) (expER ub ,ubt)
-        where
-            (lb, lbt) = lowerBound' x
-            (ub, ubt) = upperBound' x
-            expER (Finite n) = Finite (exp n)
-            expER PosInf = PosInf
-            expER NegInf = Finite 0
-imageFunc "log" rs
-  | length rs /= 1 = error "only 1 arguement allowed for log"
-  | length (head rs) == 1 = return [fromList $ map logRange (toList (head (head rs)))]
+    xs = head args
+    (x, xt) = head xs
+    expRange x
+      = interval (expER lb, lbt) (expER ub ,ubt)
+      where
+          (lb, lbt) = lowerBound' x
+          (ub, ubt) = upperBound' x
+          expER (Finite n) = Finite (exp n)
+          expER PosInf = PosInf
+          expER NegInf = Finite 0
+
+imageFunc "log" args
+  | length args /= 1 = error "only 1 arguement allowed for log"
+  | length (head args) == 1 = return [(fromList $ map logRange (toList x), xt)]
   | otherwise = error "log only accepts one argument"
   where
-      logRange x
-        = if (lb < Finite 0) || (lb == Finite 0 && lbt == Closed) then
-              error "log x is undefined when x <= 0"
-          else
-              interval (logER lb, lbt) (logER ub, ubt)
-        where
-            (lb, lbt) = lowerBound' x
-            (ub, ubt) = upperBound' x
-            logER (Finite 0) = NegInf
-            logER PosInf = PosInf
-            logER (Finite n) = Finite (log n)
-imageFunc id rs
+    xs = head args
+    (x, xt) = head xs
+    logRange x
+      = if (lb < Finite 0) || (lb == Finite 0 && lbt == Closed) then
+            error "log x is undefined when x <= 0"
+        else
+            interval (logER lb, lbt) (logER ub, ubt)
+      where
+          (lb, lbt) = lowerBound' x
+          (ub, ubt) = upperBound' x
+          logER (Finite 0) = NegInf
+          logER PosInf = PosInf
+          logER (Finite n) = Finite (log n)
+
+imageFunc id args
   | id `elem` ["sin", "cos", "tan"] =
-    if length rs /= 1 then error ("only 1 arguement allowed for " <> id)
-    else if length (head rs) == 1 then Mk(\k ->
+    if length args /= 1 then error ("only 1 arguement allowed for " <> id)
+    else if length (head args) == 1 then Mk (\k ->
       (do
-        rs' <- mapM (triRange id) (toList (head (head rs)))
-        k [fromList rs']))
+        rs' <- mapM (triRange id) (toList x)
+        k [(fromList rs', xt)]))
     else error (id <> " only accepts one argument")
     where 
+      xs = head args
+      (x, xt) = head xs
       triRange id x = 
         do
           cwd <- getCurrentDirectory
@@ -592,9 +641,6 @@ typePrim env (PrimD t id es)
         _ -> if length rs == 1 then head rs else error $ show es <> ", arguement of" <> dist <> " distribution cannot be tuple"
 typePrim _ d = error $ show d <> " is not a prim dist"
 
-
-data Type = Count | Uncount
-  deriving Eq
 
 
 nn :: Environment Dist -> Expr -> M (Maybe Type)
