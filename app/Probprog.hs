@@ -291,8 +291,8 @@ imageFunc "+" args
   where
     xs = head args
     ys = last args
-    (x, xt) = if length x == 1 then head xs else error "tuple arguement not allowed for +"
-    (y, yt) = if length y == 1 then last ys else error "tuple arguement not allowed for +"
+    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for +"
+    (y, yt) = if length ys == 1 then last ys else error "tuple arguement not allowed for +"
     t = if xt == yt && xt == C then C else UC
     plus rx ry = interval (lb,lbt) (ub,ubt)
       where
@@ -311,8 +311,8 @@ imageFunc "-" args
   where
     xs = head args
     ys = last args
-    (x, xt) = if length x == 1 then head xs else error "tuple arguement not allowed for -"
-    (y, yt) = if length y == 1 then head ys else error "tuple arguement not allowed for -"
+    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for -"
+    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for -"
     t = if xt == yt && xt == C then C else UC
     minus x y = interval (lb, lbt) (ub, ubt)
       where
@@ -331,8 +331,8 @@ imageFunc "*" args
   where
     xs = head args
     ys = last args
-    (x, xt) = if length x == 1 then head xs else error "tuple arguement not allowed for *"
-    (y, yt) = if length y == 1 then head ys else error "tuple arguement not allowed for *"
+    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for *"
+    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for *"
     t = if xt == yt && xt == C then C else UC
     mul x y =
       interval (lb, lbt) (ub, ubt)
@@ -361,7 +361,7 @@ imageFunc "<" args
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
 
 imageFunc "<=" args
-  | length arg /= 2 = error "only 2 arguement allowed for <="
+  | length args /= 2 = error "only 2 arguement allowed for <="
   | otherwise = return [(unions [lessEq x' y' | x' <- toList x, y' <- toList y], C)]
   where
     xs = head args
@@ -374,7 +374,7 @@ imageFunc "<=" args
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
 
 imageFunc ">" args
-  | length arg /= 2 = error "only 2 arguement allowed for >"
+  | length args /= 2 = error "only 2 arguement allowed for >"
   | otherwise = return [(unions [gt x' y' | x' <- toList x, y' <- toList y], C)]
   where
     xs = head args
@@ -387,7 +387,7 @@ imageFunc ">" args
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
 
 imageFunc ">=" args
-  | length arg /= 2 = error "only 2 arguement allowed for >"
+  | length args /= 2 = error "only 2 arguement allowed for >"
   | otherwise = return [(unions [gtEq x' y' | x' <- toList x, y' <- toList y], C)]
   where
     xs = head args
@@ -400,7 +400,7 @@ imageFunc ">=" args
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
 
 imageFunc "=" args
-  | length arg /= 2 = error "only 2 arguement allowed for ="
+  | length args /= 2 = error "only 2 arguement allowed for ="
   | otherwise = return [(unions [eq x' y' | x' <- toList x, y' <- toList y], C)]
   where
     xs = head args
@@ -413,7 +413,7 @@ imageFunc "=" args
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
 
 imageFunc "<>" args
-  | length arg /= 2 = error "only 2 arguement allowed for <>"
+  | length args /= 2 = error "only 2 arguement allowed for <>"
   | otherwise = return [(unions [notEq x' y' | x' <- toList x, y' <- toList y], C)]
   where
     xs = head args
@@ -626,34 +626,9 @@ range env (Apply (Variable n) es) =
 range env (Variable x) = let d = find env x in imageDist env d
 range env Loop {} = return [(Intervals.whole, UC)] --unable to calculate, for safety, return the upperbound
 
-typePrim :: Environment Dist -> Dist -> M Type
-typePrim env (PrimD t id es)
-  | t == DZ = return C
-  | id == "Normal" =
-    do
-      rs' <- mapM (range env) es
-      let rs = map (f id) rs'
-      
-      if Intervals.member 0 (last rs) then return C else return UC
-
-  | id == "Uniform" =
-      do
-        rs' <- mapM (range env) es
-        let rs = map (f id) rs'
-        if Intervals.null (intersections rs)
-        then return U else return C
-  where
-    f dist rs =
-      case dist of
-        "WRoll" -> if length rs == 2 then head rs else error $ show es <> ", arguement of WRoll distribution can only be pair"
-        _ -> if length rs == 1 then head rs else error $ show es <> ", arguement of" <> dist <> " distribution cannot be tuple"
-
-typePrim _ d = error $ show d <> " is not a prim dist"
-
-
 
 nn :: Environment Dist -> Expr -> M (Maybe Type)
-nn env (Variable x) = fmap Just (typePrim env (find env x))
+nn env (Variable x) = return Nothing --fmap Just (typePrim env (find env x))
 nn env (Number  _) = return $ Just C
 nn env (If e1 e2 e3) =
   do t1 <- nn env e2
@@ -673,7 +648,7 @@ ac d =
     return (isJust x)
 
 ac' :: Environment Dist -> Dist -> M (Maybe Type)
-ac' env d@(PrimD t _ _) = fmap Just (typePrim env d)
+ac' env d@(PrimD t _ _) = return Nothing --fmap Just (typePrim env d)
 ac' env (Return e) = nn env e
 ac' env (Score e d) = ac' env d
 ac' env (Let (Rand x d1) d2) =
