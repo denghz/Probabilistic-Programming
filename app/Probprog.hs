@@ -488,7 +488,6 @@ imageFunc id rs
           Py.initialize
           pythonpath <- Py.getPath
           T.putStrLn ("Python path at startup is: " <> pythonpath <> "\n")
-          -- Appending so that the user's PYTHONPATH variable (ready by python) can go first.
           let updatedPytonpath = pythonpath <> ":/home/dhz/.local/lib/python3.6/site-packages:/usr/local/lib/python3.6/dist-packages:/usr/lib/python3/dist-packages:./src"
           T.putStrLn ("Setting Python path to: " <> updatedPytonpath <> "\n")
           Py.setPath updatedPytonpath 
@@ -499,9 +498,9 @@ imageFunc id rs
                   arg (T.pack $ show lbt),
                   arg (mapER ub),
                   arg (T.pack $ show ubt) ] []
-          Py.finalize 
           let (lb, lbt) = getLb (fst res)
           let (ub, ubt) = getUb (snd res)
+          Py.finalize 
           return $ makeInterval lb lbt ub ubt
         where
           (lb, lbt) = lowerBound' x

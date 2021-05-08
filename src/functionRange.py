@@ -62,7 +62,7 @@ class InEqConsumer(WXFConsumer):
             
 
 
-def calRange(f="Sin", lb=0.0, lbt='Open', ub=0.5, ubt='Open'):
+def calRange(f, lb, lbt, ub, ubt):
     with WolframLanguageSession() as session:
         f = wlexpr(f)
         lbt = '<' if lbt == 'Open' else '<='
@@ -75,10 +75,4 @@ def calRange(f="Sin", lb=0.0, lbt='Open', ub=0.5, ubt='Open'):
         res = binary_deserialize(wxf, consumer=InEqConsumer())
         session.terminate()
         return res
-
-def calRanges(f, l):
-    res = []
-    for x in l:
-        res.append(calRange(f, *x))
-    return res
 
