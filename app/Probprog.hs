@@ -452,10 +452,12 @@ imageFunc "fst" args
   | length args /= 1 = error "only 1 arguement allowed for fst"
   | length (head args) == 2 = return [head (head args)]
   | otherwise = error "fst only accepts pair argument"
+
 imageFunc "snd" args
   | length args /= 1 = error "only 1 arguement allowed for snd"
   | length (head args) == 2 = return [last (head args)]
   | otherwise = error "snd only accepts pair argument"
+
 imageFunc "floor" args
   | length args /= 1 = error "only 1 arguement allowed for floor"
   | length (head args) == 1 = return [(unions intRanges, C)]
@@ -520,47 +522,47 @@ imageFunc "log" args
 
 imageFunc id args
   | id `elem` ["sin", "cos", "tan"] =
-    if length args /= 1 then error ("only 1 arguement allowed for " <> id)
-    else if length (head args) == 1 then Mk (\k ->
-      (do
-        rs' <- mapM (triRange id) (toList x)
-        k [(fromList rs', xt)]))
-    else error (id <> " only accepts one argument")
-    where
-      xs = head args
-      (x, xt) = head xs
-      triRange id x =
-        do
-          cwd <- getCurrentDirectory
-          Py.initialize
-          pythonpath <- Py.getPath
-          T.putStrLn ("Python path at startup is: " <> pythonpath <> "\n")
-          let updatedPytonpath = pythonpath <> ":/home/dhz/.local/lib/python3.6/site-packages:/usr/local/lib/python3.6/dist-packages:/usr/lib/python3/dist-packages:./src"
-          T.putStrLn ("Setting Python path to: " <> updatedPytonpath <> "\n")
-          Py.setPath updatedPytonpath
-          let calRanges = call "functionRange" "calRange"
-          res <- calRanges
-                  [arg (T.pack $ toUpper (head id) : tail id),
-                  arg (mapER lb),
-                  arg (T.pack $ show lbt),
-                  arg (mapER ub),
-                  arg (T.pack $ show ubt) ] []
-          let (lb, lbt) = getLb (fst res)
-          let (ub, ubt) = getUb (snd res)
-          Py.finalize
-          return $ interval (lb, lbt) (ub, ubt)
-        where
-          (lb, lbt) = lowerBound' x
-          (ub, ubt) = upperBound' x
-          mapER (Finite n) = Just n
-          mapER _ = Nothing
-          getLb Nothing = (NegInf, Open)
-          getLb (Just (lb, lbt)) = (Finite lb, read $ T.unpack lbt)
-          getUb Nothing = (PosInf, Open)
-          getUb (Just (ub, ubt)) = (Finite ub, read $ T.unpack ubt)
-
-
-
+      if length args /= 1 then error ("only 1 arguement allowed for " <> id)
+      else if length (head args) == 1 then Mk (\k ->
+        (do
+          rs' <- mapM (triRange id) (toList x)
+          k [(fromList rs', xt)]))
+      else error (id <> " only accepts one argument")
+  | otherwise = error $ "imageFunc " <> id <> " is not implemented yet"
+      where
+        xs = head args
+        (x, xt) = head xs
+        triRange id x =
+          do
+            cwd <- getCurrentDirectory
+            Py.initialize
+            pythonpath <- Py.getPath
+            T.putStrLn ("Python path at startup is: " <> pythonpath <> "\n")
+            let updatedPytonpath = pythonpath <> ":/home/dhz/.local/lib/python3.6/site-packages:/usr/local/lib/python3.6/dist-packages:/usr/lib/python3/dist-packages:./src"
+            T.putStrLn ("Setting Python path to: " <> updatedPytonpath <> "\n")
+            Py.setPath updatedPytonpath
+            let calRanges = call "functionRange" "calRange"
+            res <- calRanges
+                    [arg (T.pack $ toUpper (head id) : tail id),
+                    arg (mapER lb),
+                    arg (T.pack $ show lbt),
+                    arg (mapER ub),
+                    arg (T.pack $ show ubt) ] []
+            let (lb, lbt) = getLb (fst res)
+            let (ub, ubt) = getUb (snd res)
+            Py.finalize
+            return $ interval (lb, lbt) (ub, ubt)
+          where
+            (lb, lbt) = lowerBound' x
+            (ub, ubt) = upperBound' x
+            mapER (Finite n) = Just n
+            mapER _ = Nothing
+            getLb Nothing = (NegInf, Open)
+            getLb (Just (lb, lbt)) = (Finite lb, read $ T.unpack lbt)
+            getUb Nothing = (PosInf, Open)
+            getUb (Just (ub, ubt)) = (Finite ub, read $ T.unpack ubt)
+  
+  
 imageDist :: Environment Dist -> Dist -> M [Range]
 imageDist env (Return e) = range env e
 imageDist env (Let (Rand x d1) d2) = imageDist (define env x d1) d2
@@ -596,9 +598,21 @@ imagePrim "Roll" rs =
     in case ub of
         PosInf -> return [(Intervals.whole, C)]
         Finite n -> return [(fromList (map (IntInterval.toInterval.IntInterval.singleton) [1..floor n]), C)]
-    
 imagePrim "WRoll" rs = let res = unions (map fst rs) in return [(res,C)]
 
+
+rangePrim :: Environment Dist -> Dist -> M [Range]
+rangePrim env (PrimD t id es) =
+  do
+    rs' <- mapM (range env) es
+    let rs = map (get id) rs'
+    imagePrim id rs
+  where
+    get dist rs =
+      case dist of
+        "WRoll" -> if length rs == 2 then head rs else error $ show es <> ", arguement of WRoll distribution can only be pair"
+        _ -> if length rs == 1 then head rs else error $ show es <> ", arguement of" <> dist <> " distribution cannot be tuple"
+rangePrim _ d = error $ show d <> " is not a prim dist"
 
 range :: Environment Dist -> Expr -> M [Range]
 range env (Pair p) =
