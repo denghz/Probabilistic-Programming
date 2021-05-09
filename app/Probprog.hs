@@ -4,7 +4,7 @@ module Probprog(main,eval,init_env) where
 import Parsing(dialog, print_defn, print_value)
 import Syntax
 import Parser
-import qualified Data.IntervalSet as Intervals(null, member, whole, span)
+import qualified Data.IntervalSet as Intervals(intersection, null, member, whole, span, union)
 import Data.IntervalSet hiding(null, member)
 import qualified Data.IntegerInterval as IntInterval
 import Data.Interval hiding(null, singleton, intersections, member, isSubsetOf)
@@ -15,6 +15,7 @@ import Data.Maybe(isJust)
 import Data.Char
 import Data.Bifunctor
 import Data.Bitraversable
+
 
 import qualified CPython as Py
 import qualified CPython.Protocols.Object as Py
@@ -32,15 +33,97 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import           System.Directory (getCurrentDirectory)
 import           System.FilePath ((</>))
-import           System.IO (stdout, stderr, hPutStrLn)
+import           System.IO (stdout, stderr, hPutStrLn, Newline (CRLF))
 
 type Ans = IO Env
 newtype M a = Mk ((a -> Ans) -> Ans)
 
-type Range =  (IntervalSet Double, Type) -- Boundary of Integer Range is Integer
-
-data Type = C | UC
+data Range =
+  C (IntervalSet Double) | UC (IntervalSet Double) | B (IntervalSet Double) (IntervalSet Double)
   deriving (Eq, Show)
+  -- either count or uncount or both are possible
+  -- Boundary of C set is in the set
+
+getC :: Range -> Maybe (IntervalSet Double)
+getC (C r) = Just r
+getC (UC r) = Nothing
+getC (B r1 r2) = Just r1
+
+
+liftMId :: Monad m => (IntervalSet Double -> m (IntervalSet Double)) -> Range -> m Range
+liftMId f (C r) = do {r' <- f r; return $ C r'}
+liftMId f (UC r) = do {r' <- f r; return $ UC r'}
+liftMId f (B r1 r2)  = do {r1' <- f r1; r2' <- f r2; return $ B r1' r2'}
+
+liftId :: (IntervalSet Double -> IntervalSet Double) -> Range -> Range
+liftId f (C r) = C (f r)
+liftId f (UC r) = UC (f r)
+liftId f (B r1 r2) = B (f r1) (f r2)
+
+liftUCtoC :: (IntervalSet Double -> IntervalSet Double) -> Range -> Range
+liftUCtoC f (C r) = C (f r)
+liftUCtoC f (UC r) = C (f r)
+liftUCtoC f (B r1 r2) = C (f r1 `union` f r2)
+
+combineCUC :: Range -> Range -> Range
+combineCUC (C r1) (UC r2) = B r1 r2
+combineCUC (UC r1) (C r2) = B r2 r1
+
+lift2BothtoC :: (IntervalSet Double -> IntervalSet Double -> IntervalSet Double) -> Range -> Range -> Range
+lift2BothtoC op (C r1) (C r2) = C (r1 `op` r2)
+lift2BothtoC op (C r1) (UC r2) = C (r1 `op` r2)
+lift2BothtoC op (C r1) (B r2 r3) = C ((r1 `op` r2) `union` (r1 `op` r3))
+lift2BothtoC op (UC r1) (C r2) = C (r1 `op` r2)
+lift2BothtoC op (UC r1) (UC r2) = C (r1 `op` r2)
+lift2BothtoC op (UC r1) (B r2 r3) = C ((r1 `op` r2) `union` (r1 `op` r3))
+lift2BothtoC op (B r1 r2) (C r3) = C ((r1 `op` r3) `union` (r1 `op` r2))
+lift2BothtoC op (B r1 r2) (UC r3) = C ((r1 `op` r3) `union` (r2 `op` r3))
+lift2BothtoC op (B r1 r2) (B r3 r4) = C (unions [r1 `op` r3,r1 `op` r3, r1 `op` r4, r2 `op` r4])
+
+lift2BothtoUC :: (IntervalSet Double -> IntervalSet Double -> IntervalSet Double) -> Range -> Range -> Range
+lift2BothtoUC op c1 c2 = ctoUC $ lift2BothtoC op c1 c2
+  where 
+    ctoUC (C r) = UC r
+
+lift2CCtoC :: (IntervalSet Double -> IntervalSet Double -> IntervalSet Double) -> Range -> Range -> Range
+lift2CCtoC op (C r1) (C r2) = C (r1 `op` r2)
+lift2CCtoC op (C r1) (UC r2) = UC (r1 `op` r2)
+lift2CCtoC op (C r1) (B r2 r3) = B (r1 `op` r2) (r1 `op` r3)
+lift2CCtoC op (UC r1) (C r2) = UC (r1 `op` r2)
+lift2CCtoC op (UC r1) (UC r2) = UC (r1 `op` r2)
+lift2CCtoC op (UC r1) (B r2 r3) = UC ((r1 `op` r2) `union` (r1 `op` r3))
+lift2CCtoC op (B r1 r2) (C r3) = B (r1 `op` r3) (r1 `op` r2)
+lift2CCtoC op (B r1 r2) (UC r3) = UC ((r1 `op` r3) `union` (r2 `op` r3))
+lift2CCtoC op (B r1 r2) (B r3 r4) = B (r1 `op` r3) (unions [r1 `op` r3, r1 `op` r4, r2 `op` r4])
+
+
+data Type = T Range | P Type Type
+  deriving (Eq, Show)
+
+checkType :: Type -> Type -> Bool
+checkType (P t1 t2) (P t3 t4) = checkType t1 t3 && checkType t2 t4
+checkType (T r1) (T r2) = checkRange r1 r2
+  where 
+    checkRange (C _) (C _) = True
+    checkRange (UC _) (UC _) = True
+    checkRange _ _ = False
+lift2Type :: (Range -> Range -> Range) -> Type -> Type -> Type
+lift2Type f (T r1) (T r2) = T (f r1 r2)
+lift2Type f (P t1 t2) (P t3 t4) = P (lift2Type f t1 t3) (lift2Type f t2 t4)
+lift2Type _ _ _= error "dimension doesn't match "
+
+getRange :: Type -> Range
+getRange (T r) = r
+
+isPair :: Type -> Bool
+isPair (P _ _) = True
+isPair _ = False
+
+fstType :: Type -> Type
+fstType (P t1 t2) = t1
+
+sndType :: Type -> Type
+sndType (P t1 t2) = t2
 
 applyK :: M a -> (a -> Ans) -> Ans
 applyK (Mk mx) = mx
@@ -282,38 +365,72 @@ isInt :: (Integral a, RealFrac b) => a -> b -> Bool
 isInt n x = round (10^fromIntegral n*(x-fromIntegral (round x)))==0
 
 -- Extended Real is a ring not a field
+map1Ints :: (Interval Double -> Interval Double) -> IntervalSet Double -> IntervalSet Double
+map1Ints f xs = fromList [f x | x <- toList xs]
 
+map2Ints :: (Interval Double -> Interval Double -> Interval Double) -> IntervalSet Double -> IntervalSet Double -> IntervalSet Double
+map2Ints f xs ys = fromList [f x y | x <- toList xs, y <- toList ys]
 -- All builtin function should be considered
-imageFunc :: Ident -> [[Range]] -> M [Range]
-imageFunc "+" args
-  | length args /= 2 = error "only 2 arguement allowed for +"
-  | otherwise = return [(fromList [plus rx ry | rx <- toList x, ry <- toList y], t)]
+imageFunc :: Ident -> [Type] -> M Type
+imageFunc id args
+  | id `elem` ["+", "-", "*", "<", "<=", ">", ">=", "=", "<>"] =
+      let x = head args in let y = last args in
+      let xr = getRange x in let yr = getRange y in
+      if length args /= 2 then  error $ "only 2 arguement allowed for " <> id
+      else if id `elem` ["+", "-", "*"] then return (T (binopTCCtoC id xr yr))
+      else return (T (binopBothtoC id xr yr)) -- id `elem` ["<", "<=", ">", ">=", "=", "<>"]
+  | id `elem` ["~", "inv", "fst", "snd", "floor", "sin", "cos", "tan"] =
+      let x = head args in
+      if length args /= 1 then error $ "only 1 arguement allowed for " <> id
+      else
+        case id of
+          "fst" ->  return $ fstType x
+          "snd" -> return $ sndType x
+          id -> let xr = getRange x in
+            if id `elem` ["sin", "cos", "tan"] then
+              Mk (\k ->
+              (do
+              r <- liftMId (mapM1 (triRange id)) xr
+              k (T r)))
+            else if id == "floor" then return $ T (minopTUCtoC id xr)
+            else return $ T (minopTId id xr)
   where
-    xs = head args
-    ys = last args
-    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for +"
-    (y, yt) = if length ys == 1 then last ys else error "tuple arguement not allowed for +"
-    t = if xt == yt && xt == C then C else UC
-    plus rx ry = interval (lb,lbt) (ub,ubt)
+    binopTCCtoC id rx ry = lift2CCtoC (binop id) rx ry
+    binopBothtoC id rx ry = lift2BothtoC (binop id) rx ry
+    minopTId id rx = liftId (minop id) rx
+    minopTUCtoC id rx = liftUCtoC (minop id) rx
+    mapM1 f xs =
+      do
+        xs' <- mapM f (toList xs)
+        return (fromList xs')
+    minop id =
+      case id of
+        "~" -> map1Ints neg
+        "inv" -> map1Ints inv
+        "floor" -> floor
+        "exp" -> map1Ints expRange
+        "log" -> map1Ints logRange
+    binop id =
+      case id of
+        "+" -> map2Ints plus
+        "-" -> map2Ints minus
+        "*" -> map2Ints mul
+        "<" -> less
+        "<=" -> lessEq
+        ">" -> gt
+        ">=" -> gtEq
+        "=" -> eq
+        "<>" -> notEq
+    plus x y = interval (lb,lbt) (ub,ubt)
       where
-        (lbx, lbxt) = lowerBound' rx
-        (lby, lbyt) = lowerBound' ry
-        (ubx, ubxt) = upperBound' rx
-        (uby, ubyt) = upperBound' ry
+        (lbx, lbxt) = lowerBound' x
+        (lby, lbyt) = lowerBound' y
+        (ubx, ubxt) = upperBound' x
+        (uby, ubyt) = upperBound' y
         lb = lbx + lby
         ub = ubx + uby
         lbt = if Open `elem` [lbxt, lbyt] then Open else Closed
         ubt = if Open `elem` [ubxt, ubyt] then Open else Closed
-
-imageFunc "-" args
-  | length args /= 2 = error "only 2 arguement allowed for -"
-  | otherwise = return [(fromList [minus rx ry | rx <- toList x, ry <- toList y], t)]
-  where
-    xs = head args
-    ys = last args
-    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for -"
-    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for -"
-    t = if xt == yt && xt == C then C else UC
     minus x y = interval (lb, lbt) (ub, ubt)
       where
         (lbx, lbxt) = lowerBound' x
@@ -324,16 +441,6 @@ imageFunc "-" args
         lb = lbx - uby
         ubt = if Open `elem` [ubxt, lbyt] then Open else Closed
         lbt = if Open `elem` [lbxt, ubyt] then Open else Closed
-
-imageFunc "*" args
-  | length args /= 2 = error "only 2 arguement allowed for *"
-  | otherwise = return [(fromList [mul rx ry | rx <- toList x, ry <- toList y], t)]
-  where
-    xs = head args
-    ys = last args
-    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for *"
-    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for *"
-    t = if xt == yt && xt == C then C else UC
     mul x y =
       interval (lb, lbt) (ub, ubt)
       where
@@ -346,127 +453,70 @@ imageFunc "*" args
         (lb, lbt1, lbt2) = minimum bds
         ubt = if Open `elem` [ubt1, ubt2] then Open else Closed
         lbt = if Open `elem` [lbt1, lbt2] then Open else Closed
-
-imageFunc "<" args
-  | length args /= 2 = error "only 2 arguement allowed for <"
-  | otherwise  = return [(unions [less x' y' | x' <- toList x, y' <- toList y], C)]
-  where
-    xs = head args
-    ys = last args
-    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for <"
-    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for <"
-    less x y
-      | x >=! y = singleton (Finite 0 <=..<= Finite 0)
-      | x <! y = singleton (Finite 1 <=..<= Finite 1)
+    less xs ys
+      | xMin >=! yMax = singleton (Finite 0 <=..<= Finite 0)
+      | xMax <! yMin = singleton (Finite 1 <=..<= Finite 1)
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-
-imageFunc "<=" args
-  | length args /= 2 = error "only 2 arguement allowed for <="
-  | otherwise = return [(unions [lessEq x' y' | x' <- toList x, y' <- toList y], C)]
-  where
-    xs = head args
-    ys = last args
-    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for <="
-    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for <="
-    lessEq x y
-      | x >! y = singleton (Finite 0 <=..<= Finite 0)
-      | x <=! y = singleton (Finite 1 <=..<= Finite 1)
+        where
+          xDescList = toDescList xs
+          xMax = head xDescList
+          xMin = last xDescList
+          yDescList = toDescList ys
+          yMax = head xDescList
+          yMin = last xDescList
+    lessEq xs ys
+      | xMin >! yMax = singleton (Finite 0 <=..<= Finite 0)
+      | xMax <=! yMin = singleton (Finite 1 <=..<= Finite 1)
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-
-imageFunc ">" args
-  | length args /= 2 = error "only 2 arguement allowed for >"
-  | otherwise = return [(unions [gt x' y' | x' <- toList x, y' <- toList y], C)]
-  where
-    xs = head args
-    ys = last args
-    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for >"
-    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for >"
-    gt x y
-      | x <=! y = singleton (Finite 0 <=..<= Finite 0)
-      | x >! y = singleton (Finite 1 <=..<= Finite 1)
+        where
+          xDescList = toDescList xs
+          xMax = head xDescList
+          xMin = last xDescList
+          yDescList = toDescList ys
+          yMax = head xDescList
+          yMin = last xDescList
+    gt xs ys
+      | xMax <=! yMin = singleton (Finite 0 <=..<= Finite 0)
+      | xMin >! yMax = singleton (Finite 1 <=..<= Finite 1)
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-
-imageFunc ">=" args
-  | length args /= 2 = error "only 2 arguement allowed for >"
-  | otherwise = return [(unions [gtEq x' y' | x' <- toList x, y' <- toList y], C)]
-  where
-    xs = head args
-    ys = last args
-    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for >="
-    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for >="
-    gtEq x y
-      | x <! y = singleton (Finite 0 <=..<= Finite 0)
-      | x >=! y = singleton (Finite 1 <=..<= Finite 1)
+        where
+          xDescList = toDescList xs
+          xMax = head xDescList
+          xMin = last xDescList
+          yDescList = toDescList ys
+          yMax = head xDescList
+          yMin = last xDescList
+    gtEq xs ys
+      | xMax <! yMin = singleton (Finite 0 <=..<= Finite 0)
+      | xMin >=! yMax = singleton (Finite 1 <=..<= Finite 1)
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-
-imageFunc "=" args
-  | length args /= 2 = error "only 2 arguement allowed for ="
-  | otherwise = return [(unions [eq x' y' | x' <- toList x, y' <- toList y], C)]
-  where
-    xs = head args
-    ys = last args
-    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for ="
-    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for ="
-    eq x y
-      | x /=! y = singleton (Finite 0 <=..<= Finite 0)
-      | x ==! y = singleton (Finite 1 <=..<= Finite 1)
+        where
+          xDescList = toDescList xs
+          xMax = head xDescList
+          xMin = last xDescList
+          yDescList = toDescList ys
+          yMax = head xDescList
+          yMin = last xDescList
+    eq xs ys
+      | Intervals.null (Intervals.intersection xs ys) = singleton (Finite 0 <=..<= Finite 0)
+      | Intervals.null (difference xs ys) = singleton (Finite 1 <=..<= Finite 1)
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-
-imageFunc "<>" args
-  | length args /= 2 = error "only 2 arguement allowed for <>"
-  | otherwise = return [(unions [notEq x' y' | x' <- toList x, y' <- toList y], C)]
-  where
-    xs = head args
-    ys = last args
-    (x, xt) = if length xs == 1 then head xs else error "tuple arguement not allowed for <>"
-    (y, yt) = if length ys == 1 then head ys else error "tuple arguement not allowed for <>"
-    notEq x y
-      | x ==! y = singleton (Finite 0 <=..<= Finite 0)
-      | x /=! y = singleton (Finite 1 <=..<= Finite 1)
+    notEq xs ys
+      | Intervals.null (Intervals.intersection xs ys) = singleton (Finite 1 <=..<= Finite 1)
+      | Intervals.null (difference xs ys) = singleton (Finite 0 <=..<= Finite 0)
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-
-imageFunc "~" args
-  | length args /= 1 = error "only 1 arguement allowed for ~"
-  | otherwise = return [(fromList $ map neg (toList x), xt)]
-  where
-    xs = head args
-    (x, xt) = if length (head args) == 1 then head xs else error "tuple arguement not allowed for ~"
-    neg x = interval (-ub,ubt) (-lb,lbt)
+    neg xs = interval (-ub,ubt) (-lb,lbt)
       where
-        (lb, lbt) = lowerBound' x
-        (ub, ubt) = upperBound' x
-
-imageFunc "inv" args
-  | length args /= 1 = error "only 1 arguement allowed for inv"
-  | otherwise = return [(fromList $ map inv (toList x), xt)]
-  where
-    xs = head args
-    (x, xt) = if length (head args) == 1 then head xs else error "tuple arguement not allowed for inv"
-    inv x = if 0 `Interval.member` x then Interval.whole
-            else interval (if ub/=0 then 1/ub else NegInf, ubt) (if lb/=0 then 1/lb else PosInf, lbt)
-          where
-            (lb, lbt) = lowerBound' x
-            (ub, ubt) = upperBound' x
-
-imageFunc "fst" args
-  | length args /= 1 = error "only 1 arguement allowed for fst"
-  | length (head args) == 2 = return [head (head args)]
-  | otherwise = error "fst only accepts pair argument"
-
-imageFunc "snd" args
-  | length args /= 1 = error "only 1 arguement allowed for snd"
-  | length (head args) == 2 = return [last (head args)]
-  | otherwise = error "snd only accepts pair argument"
-
-imageFunc "floor" args
-  | length args /= 1 = error "only 1 arguement allowed for floor"
-  | length (head args) == 1 = return [(unions intRanges, C)]
-  | otherwise = error "floor only accepts one argument"
-  where
-    xs = head args
-    (x, xt) = head xs
-    intRanges
-      = map toIntervalSet (toList x)
+        (lb, lbt) = lowerBound' xs
+        (ub, ubt) = upperBound' xs
+    inv x =
+      if 0 `Interval.member` x then Interval.whole
+      else interval (if ub/=0 then 1/ub else NegInf, ubt)
+            (if lb/=0 then 1/lb else PosInf, lbt)
+        where
+          (lb, lbt) = lowerBound' x
+          (ub, ubt) = upperBound' x
+    floor xs = unions (map toIntervalSet (toList xs))
     toIntervalSet x =
       if lb /= NegInf && ub /= PosInf then
             fromList
@@ -477,21 +527,13 @@ imageFunc "floor" args
             singleton $ IntInterval.toInterval x'
       where
         x' = IntInterval.fromIntervalUnder x
-        lb = IntInterval.lowerBound x' + 
-            let (lb', lbt') = lowerBound' x in 
+        lb = IntInterval.lowerBound x' +
+            let (lb', lbt') = lowerBound' x in
               if checkInt lb' && lbt' == Closed then (-1) else 0
         ub = IntInterval.upperBound x'
         fromFinite (Finite n) = n
         checkInt (Finite n) = isInt 10 n
-        checkInt _ = False 
-
-imageFunc "exp" args
-  | length args /= 1 = error "only 1 arguement allowed for exp"
-  | length (head args) == 1 = return [(fromList $ map expRange (toList x), xt)]
-  | otherwise = error "exp only accepts one argument"
-  where
-    xs = head args
-    (x, xt) = head xs
+        checkInt _ = False
     expRange x
       = interval (expER lb, lbt) (expER ub ,ubt)
       where
@@ -500,14 +542,6 @@ imageFunc "exp" args
           expER (Finite n) = Finite (exp n)
           expER PosInf = PosInf
           expER NegInf = Finite 0
-
-imageFunc "log" args
-  | length args /= 1 = error "only 1 arguement allowed for log"
-  | length (head args) == 1 = return [(fromList $ map logRange (toList x), xt)]
-  | otherwise = error "log only accepts one argument"
-  where
-    xs = head args
-    (x, xt) = head xs
     logRange x
       = if (lb < Finite 0) || (lb == Finite 0 && lbt == Closed) then
             error "log x is undefined when x <= 0"
@@ -519,20 +553,7 @@ imageFunc "log" args
           logER (Finite 0) = NegInf
           logER PosInf = PosInf
           logER (Finite n) = Finite (log n)
-
-imageFunc id args
-  | id `elem` ["sin", "cos", "tan"] =
-      if length args /= 1 then error ("only 1 arguement allowed for " <> id)
-      else if length (head args) == 1 then Mk (\k ->
-        (do
-          rs' <- mapM (triRange id) (toList x)
-          k [(fromList rs', xt)]))
-      else error (id <> " only accepts one argument")
-  | otherwise = error $ "imageFunc " <> id <> " is not implemented yet"
-      where
-        xs = head args
-        (x, xt) = head xs
-        triRange id x =
+    triRange id x =
           do
             cwd <- getCurrentDirectory
             Py.initialize
@@ -561,76 +582,74 @@ imageFunc id args
             getLb (Just (lb, lbt)) = (Finite lb, read $ T.unpack lbt)
             getUb Nothing = (PosInf, Open)
             getUb (Just (ub, ubt)) = (Finite ub, read $ T.unpack ubt)
-  
-  
-imageDist :: Environment Dist -> Dist -> M [Range]
+
+imageDist :: Environment Dist -> Dist -> M Type
 imageDist env (Return e) = range env e
 imageDist env (Let (Rand x d1) d2) = imageDist (define env x d1) d2
 imageDist env (Score e d) = imageDist env d -- unable to calculate, for safety, return the upperbound
 imageDist env (PrimD _ id es) =
     do
       rs <- mapM (range env) es
-      xs' <- imagePrim id (map f rs)
-      return [head xs']
-    where
-    f rs = if length rs == 1 then head rs else error $ show es <> ", arguement of distribution cannot be tuple"
+      imagePrim id rs
 
 
-imagePrim :: Ident -> [Range] -> M [Range]
+imagePrim :: Ident -> [Type] -> M Type
 imagePrim "Normal" rs =
   if length rs /= 2 then error "Normal distribution can only have two parameters."
   else
-    let (variance, _) = last rs in let mean = head rs in
-      if variance `isSubsetOf` singleton (Finite 0 <=..<= Finite 0)
-        then return [mean] else return [(Intervals.whole, UC)]
+    let variance = getRange $ last rs in let mean = head rs in
+      if 
+        (do v <- getC variance; return $ v `isSubsetOf` singleton (Finite 0 <=..<= Finite 0)) == Just True 
+      then return mean else return (T (UC Intervals.whole))
+
 imagePrim "Uniform" rs =
   if length rs /= 2 then error "Unifrom distribution can only have two parameters."
   else
-    let (isx, xt) = head rs in
-    let (isy, yt) = last rs in
-    let res = [(singleton (Intervals.span (isx `union` isy)), UC)] in
-    if xt == yt && xt == C then return $ (intersections [isx, isy], C):res
-    else return res  
+    let cr  = do
+              rx <- getC x
+              ry <- getC y
+              return (C (intersections [rx,ry]))
+    in let uc = lift2BothtoUC (\x y -> singleton (Intervals.span (x `union` y))) x y in
+      case cr of
+        Just c -> return $ T (combineCUC c uc)
+    where
+      x = getRange $ head rs
+      y = getRange $ head rs
+    
 imagePrim "Roll" rs =
-  if length rs /= 1 then error "Roll distribution can only have on parameter"
-  else 
-    let ub = upperBound $ head (toDescList $ fst (head rs))
-    in case ub of
-        PosInf -> return [(Intervals.whole, C)]
-        Finite n -> return [(fromList (map (IntInterval.toInterval.IntInterval.singleton) [1..floor n]), C)]
-imagePrim "WRoll" rs = let res = unions (map fst rs) in return [(res,C)]
+  if length rs /= 1 then error "Roll distribution can only have one parameter"
+  else
+    case x of
+      C r -> 
+        let ub = upperBound $ head (toDescList r)
+        in case ub of
+          PosInf -> return $ T (C Intervals.whole)
+          Finite n ->
+            if isInt 10 n then 
+              return $ T (C (fromList (map (IntInterval.toInterval.IntInterval.singleton) [1..floor n])))
+            else intErr
+      _ -> intErr
+  where 
+    intErr = error "argument of Roll must be an integer"
+    x = getRange $ head rs
 
+imagePrim "WRoll" rs = 
+  let xs = map (getRange.fstType) rs in
+  let unionRange = lift2CCtoC Intervals.union in
+  let res = foldr1 unionRange xs in return (T res)
 
-rangePrim :: Environment Dist -> Dist -> M [Range]
-rangePrim env (PrimD t id es) =
-  do
-    rs' <- mapM (range env) es
-    let rs = map (get id) rs'
-    imagePrim id rs
-  where
-    get dist rs =
-      case dist of
-        "WRoll" -> if length rs == 2 then head rs else error $ show es <> ", arguement of WRoll distribution can only be pair"
-        _ -> if length rs == 1 then head rs else error $ show es <> ", arguement of" <> dist <> " distribution cannot be tuple"
-rangePrim _ d = error $ show d <> " is not a prim dist"
-
-range :: Environment Dist -> Expr -> M [Range]
+range :: Environment Dist -> Expr -> M Type
 range env (Pair p) =
   do
     x <- range env (fst p)
     y <- range env (snd p)
-    return (x <> y)
-range _ (Number n) = return [(singleton $ Finite n <=..<= Finite n, C)]
+    return (P x y)
+range _ (Number n) = return $ T (C (singleton $ Finite n <=..<= Finite n))
 range env (If _ e1 e2) =
   do
-    rs1 <- range env e1
-    rs2 <- range env e2
-    let (is1, ts1) = unzip rs1
-    let (is2, ts2) = unzip rs2
-    let is = zipWith union is1 is2
-    let ts = zipWith (\t1 t2 -> if t1 == C && t1 == t2 then C else UC) ts1 ts2
-    if length rs1 == length rs2 then return $ zip is ts
-    else error $ show e1 <> ", " <> show e2 <> ", don't have same dimension"
+    t1 <- range env e1
+    t2 <- range env e2
+    return $ lift2Type (lift2CCtoC Intervals.union) t1 t2
   -- this is a upperbound estimate, can be calculate more accurate by using the lattices library.
 range env (Apply (Variable n) es) =
   do
@@ -638,12 +657,16 @@ range env (Apply (Variable n) es) =
     imageFunc n rs
 
 range env (Variable x) = let d = find env x in imageDist env d
-range env Loop {} = return [(Intervals.whole, UC)] --unable to calculate, for safety, return the upperbound
+range env Loop {} = return $ T (UC Intervals.whole) --unable to calculate, for safety, return the upperbound
 
-
+-- Nothing means not NN, can result in the type of high demension, everything demensition can be only Count or only UnCount, or both Count and UCount
 nn :: Environment Dist -> Expr -> M (Maybe Type)
-nn env (Variable x) = return Nothing --fmap Just (typePrim env (find env x))
-nn env (Number  _) = return $ Just C
+nn env (Variable x) =
+  do
+    r <- imageDist env (find env x)
+    return (Just r)
+
+nn env (Number n) = return $ Just (T (C (singleton $ Finite n <=..<= Finite n)))
 nn env (If e1 e2 e3) =
   do t1 <- nn env e2
      t2 <- nn env e3
@@ -653,17 +676,21 @@ nn env (Apply (Variable "+") xs)
   | null $ freeVars (head xs) = nn env (last xs)
   | null $ freeVars (last xs) = nn env (head xs)
   | otherwise = nn env (Pair (head xs, last xs))
-nn _ _ = return $ Just C
+nn _ _ = return Nothing
 
-ac :: Dist -> M Bool
-ac d =
+ac :: Dist -> Type -> M Bool
+ac d t =
   do
-    x <- ac' empty_env d
-    return (isJust x)
+    mt <- ac' empty_env d
+    return (Just True == do
+      t' <- mt
+      return $ checkType t' t)
 
 ac' :: Environment Dist -> Dist -> M (Maybe Type)
-ac' env d@(PrimD t _ _) = return Nothing --fmap Just (typePrim env d)
-ac' env (Return e) = nn env e
+ac' env d@(PrimD t _ _) =
+  do rs <- imageDist env d
+     return (Just rs)
+ac' env (Return e) =  nn env e
 ac' env (Score e d) = ac' env d
 ac' env (Let (Rand x d1) d2) =
   do
