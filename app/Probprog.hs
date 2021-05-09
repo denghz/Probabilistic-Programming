@@ -82,7 +82,7 @@ lift2BothtoC op (B r1 r2) (B r3 r4) = C (unions [r1 `op` r3,r1 `op` r3, r1 `op` 
 
 lift2BothtoUC :: (IntervalSet Double -> IntervalSet Double -> IntervalSet Double) -> Range -> Range -> Range
 lift2BothtoUC op c1 c2 = ctoUC $ lift2BothtoC op c1 c2
-  where 
+  where
     ctoUC (C r) = UC r
 
 lift2CCtoC :: (IntervalSet Double -> IntervalSet Double -> IntervalSet Double) -> Range -> Range -> Range
@@ -103,7 +103,7 @@ data Type = T Range | P Type Type
 checkType :: Type -> Type -> Bool
 checkType (P t1 t2) (P t3 t4) = checkType t1 t3 && checkType t2 t4
 checkType (T r1) (T r2) = checkRange r1 r2
-  where 
+  where
     checkRange (C _) (C _) = True
     checkRange (UC _) (UC _) = True
     checkRange _ _ = False
@@ -602,42 +602,49 @@ imagePrim "Normal" rs =
   if length rs /= 2 then error "Normal distribution can only have two parameters."
   else
     let variance = getRange $ last rs in let mean = head rs in
-      if 
-        (do v <- getC variance; return $ v `isSubsetOf` singleton (Finite 0 <=..<= Finite 0)) == Just True 
+      if
+        (do v <- getC variance; return $ v `isSubsetOf` singleton (Finite 0 <=..<= Finite 0)) == Just True
       then return mean else return (T (UC Intervals.whole))
 
-imagePrim "Uniform" rs =
-  if length rs /= 2 then error "Unifrom distribution can only have two parameters."
-  else
-    let cr  = do
-              rx <- getC x
-              ry <- getC y
-              return (C (intersections [rx,ry]))
-    in let uc = lift2BothtoUC (\x y -> singleton (Intervals.span (x `union` y))) x y in
-      case cr of
-        Just c -> return $ T (combineCUC c uc)
-    where
+imagePrim "Uniform" rs
+  | length rs /= 2 = error "Unifrom distribution can only have two parameters."
+  | ifIntersect x y = error "arguments of uniform distribution cannot overlap"
+  | otherwise =
+      let cr  = do
+                rx <- getC x
+                ry <- getC y
+                let is = intersections [rx,ry]
+                if not $ Intervals.null is then return (C is)
+                else Nothing
+      in let uc = lift2BothtoUC (\x y -> singleton (Intervals.span (x `union` y))) x y in
+        case cr of
+          Just c -> return $ T (combineCUC c uc)
+          Nothing -> return $ T uc
+  where
+      ifIntersect r1 r2
+        = not (checkSingOrNull $ lift2BothtoC Intervals.intersection r1 r2)
+      checkSingOrNull (C r) = let rs = toList r in (length rs == 1 && isSingleton (head rs)) || Intervals.null r
       x = getRange $ head rs
-      y = getRange $ head rs
-    
+      y = getRange $ last rs
+
 imagePrim "Roll" rs =
   if length rs /= 1 then error "Roll distribution can only have one parameter"
   else
     case x of
-      C r -> 
+      C r ->
         let ub = upperBound $ head (toDescList r)
         in case ub of
           PosInf -> return $ T (C Intervals.whole)
           Finite n ->
-            if isInt 10 n then 
+            if isInt 10 n then
               return $ T (C (fromList (map (IntInterval.toInterval.IntInterval.singleton) [1..floor n])))
             else intErr
       _ -> intErr
-  where 
+  where
     intErr = error "argument of Roll must be an integer"
     x = getRange $ head rs
 
-imagePrim "WRoll" rs = 
+imagePrim "WRoll" rs =
   let xs = map (getRange.fstType) rs in
   let unionRange = lift2CCtoC Intervals.union in
   let res = foldr1 unionRange xs in return (T res)
