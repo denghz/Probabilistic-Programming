@@ -107,6 +107,10 @@ checkType (T r1) (T r2) = checkRange r1 r2
     checkRange (C _) (C _) = True
     checkRange (UC _) (UC _) = True
     checkRange _ _ = False
+
+unionType :: Type -> Type -> Type
+unionType = lift2Type (lift2CCtoC Intervals.union)
+
 lift2Type :: (Range -> Range -> Range) -> Type -> Type -> Type
 lift2Type f (T r1) (T r2) = T (f r1 r2)
 lift2Type f (P t1 t2) (P t3 t4) = P (lift2Type f t1 t3) (lift2Type f t2 t4)
@@ -649,7 +653,7 @@ range env (If _ e1 e2) =
   do
     t1 <- range env e1
     t2 <- range env e2
-    return $ lift2Type (lift2CCtoC Intervals.union) t1 t2
+    return $ unionType t1 t2
   -- this is a upperbound estimate, can be calculate more accurate by using the lattices library.
 range env (Apply (Variable n) es) =
   do
@@ -660,42 +664,48 @@ range env (Variable x) = let d = find env x in imageDist env d
 range env Loop {} = return $ T (UC Intervals.whole) --unable to calculate, for safety, return the upperbound
 
 -- Nothing means not NN, can result in the type of high demension, everything demensition can be only Count or only UnCount, or both Count and UCount
-nn :: Environment Dist -> Expr -> M (Maybe Type)
-nn env (Variable x) =
+nn :: Type -> Environment Dist -> Expr -> M (Maybe Type)
+nn _ env (Variable x) =
   do
     r <- imageDist env (find env x)
     return (Just r)
 
-nn env (Number n) = return $ Just (T (C (singleton $ Finite n <=..<= Finite n)))
-nn env (If e1 e2 e3) =
-  do t1 <- nn env e2
-     t2 <- nn env e3
-     return (if t1 == t2 then t1
-              else error $ show (If e1 e2 e3) <> ", doesn't have the same type in both branches")
-nn env (Apply (Variable "+") xs)
-  | null $ freeVars (head xs) = nn env (last xs)
-  | null $ freeVars (last xs) = nn env (head xs)
-  | otherwise = nn env (Pair (head xs, last xs))
-nn _ _ = return Nothing
+nn _ env (Number n) = return $ Just (T (C (singleton $ Finite n <=..<= Finite n)))
+
+nn t env (If e1 e2 e3) =
+  do mt1 <- nn t env e2
+     mt2 <- nn t env e3
+     let res = do
+          t1 <- mt1
+          t2 <- mt2
+          if checkType t1 t2 then return (unionType t1 t2) else Nothing
+     return res
+
+nn t env (Apply (Variable "+") xs)
+  | null $ freeVars (head xs) = nn t env (last xs)
+  | null $ freeVars (last xs) = nn t env (head xs)
+  | otherwise = nn t env (Pair (head xs, last xs))
+
+nn _ _ _ = return Nothing
 
 ac :: Dist -> Type -> M Bool
 ac d t =
   do
-    mt <- ac' empty_env d
+    mt <- ac' t empty_env d
     return (Just True == do
       t' <- mt
       return $ checkType t' t)
 
-ac' :: Environment Dist -> Dist -> M (Maybe Type)
-ac' env d@(PrimD t _ _) =
+ac' :: Type -> Environment Dist -> Dist -> M (Maybe Type)
+ac' _ env d@(PrimD t _ _)=
   do rs <- imageDist env d
      return (Just rs)
-ac' env (Return e) =  nn env e
-ac' env (Score e d) = ac' env d
-ac' env (Let (Rand x d1) d2) =
+ac' t env (Return e) =  nn t env e
+ac' t env (Score e d) = ac' t env d
+ac' t env (Let (Rand x d1) d2) =
   do
-    t <- ac' env d1
-    ac' (define env x d1) d2
+    _ <- ac' t env d1
+    ac' t (define env x d1) d2
 
 init_env :: Env
 init_env =
