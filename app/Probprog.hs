@@ -11,7 +11,7 @@ import Data.Interval hiding(null, singleton, intersections, member, isSubsetOf)
 import qualified Data.Interval as Interval(member, whole)
 import Environment
 import Control.Monad(liftM, ap)
-import Data.Maybe(isJust, fromJust)
+import Data.Maybe(isJust, fromJust, catMaybes)
 import Data.Char
 import Data.Bifunctor
 import Data.Bitraversable
@@ -43,6 +43,10 @@ data Range =
   deriving (Eq, Show)
   -- either count or uncount or both are possible
   -- Boundary of C set is in the set
+
+rangeBtoUC :: Range -> Range
+rangeBtoUC (B r1 r2) = UC r2
+rangeBtoUC r = r
 
 getC :: Range -> Maybe (IntervalSet Double)
 getC (C r) = Just r
@@ -111,6 +115,15 @@ checkType (T r1) (T r2) = checkRange r1 r2
     checkRange (C _) (C _) = True
     checkRange (UC _) (UC _) = True
     checkRange _ _ = False
+
+mapType :: (Range -> Range) -> Type -> Type
+mapType f (T r) = T (f r)
+mapType f (P r1 r2) = P (mapType f r1) (mapType f r2)
+
+isCountType :: Type -> Bool
+isCountType (T (C r)) = True
+isCountType (P r1 r2) = isCountType r1 && isCountType r2
+isCountType _ = False
 
 unionType :: Type -> Type -> Type
 unionType = lift2Type (lift2CCtoC Intervals.union)
@@ -768,17 +781,81 @@ nn env (Pair (x,y)) =
   do
     xt <- nn env x
     yt <- nn env y
+    xtUC <- nnUC env x
+    ytUC <- nnUC env y
+    let intersectVars = filter (`elem` freeVars x) (freeVars y)
+    intersT <- mapM (nn env . Variable) intersectVars
     let t =
           do
             xt' <- xt
             yt' <- yt
-            if checkType xt' yt' then return $ P xt' yt'
+            if (null intersectVars || all isCountType (catMaybes intersT)) && checkType xt' yt' 
+              then return $ P xt' yt'
+            else if all isJust [xtUC, ytUC] then
+              return $ P (fromJust xtUC) (fromJust ytUC)
             else Nothing
     return t
 
 nn env Loop {} = return Nothing
 
+nnUC :: Environment Dist -> Expr -> M (Maybe Type)
+nnUC env (Variable x) =
+  do
+    r <- imageDist env (find env x)
+    return $ Just (mapType rangeBtoUC r)
+nnUC env (Number n) = nn env (Number n)
+nnUC env (If e1 e2 e3) =
+  do
+    t <- range env e1
+    if t == T (C $ singleton (Finite 0 <=..<= Finite 0)) then nn env e3
+    else if t == T (C $ singleton (Finite 1 <=..<= Finite 1)) then nn env e2
+    else do
+      mt1 <- nn env e2
+      mt2 <- nn env e3
+      let res = do
+           t1 <- mt1
+           t2 <- mt2
+           let t1' = mapType rangeBtoUC t1
+           let t2' = mapType rangeBtoUC t2
+           if checkType t1' t2' then return (unionType t1' t2') else Nothing
+      return res
 
+nnUC env (Apply (Variable "+") xs) =
+  if length xs /= 2 then error "+ takes two arguments"
+    else
+  do
+      ts <- nnUC env (Pair (head xs, last xs))
+      let ts' = do
+            t <- ts
+            let t1 = fstType t
+            let t2 = sndType t
+            return [t1, t2]
+      mapM (imageFunc "+") ts'
+
+nnUC env (Apply (Variable "*") xs) =
+  if length xs /= 2 then error "* takes two arguments"
+    else
+  do
+    t1 <- nnUC env (head xs)
+    t2 <- nnUC env (last xs)
+    let ts = catMaybes [t1, t2]
+    t <- imageFunc "*" ts
+    return (Just t)
+
+
+nnUC env (Apply (Variable id) xs)
+  | id `elem` ["~", "inv", "log", "exp", "sin", "cos", "tan", "fst", "snd"] =
+    if length xs /= 1 then error $ id <> " takes two arguments"
+    else
+      do
+        t <- nnUC env (head xs)
+        let t' = fmap (:[]) t
+        mapM (imageFunc id) t'
+  | otherwise = error $ id <> " not implemeneted"
+
+nnUC env (Pair (x,y)) = nn env (Pair (x,y))
+
+nnUC env Loop {} = return Nothing
 
 ac :: Dist -> Type -> M Bool
 ac d t =
