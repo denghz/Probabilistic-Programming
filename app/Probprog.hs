@@ -379,10 +379,10 @@ imageFunc :: Ident -> [Type] -> M Type
 imageFunc id args
   | id `elem` ["+", "-", "*", "<", "<=", ">", ">=", "=", "<>"] =
       let x = head args in let y = last args in
-      let xr = getRange x in let yr = getRange y in
+      let rx = getRange x in let ry = getRange y in
       if length args /= 2 then  error $ "only 2 arguement allowed for " <> id
-      else if id `elem` ["+", "-", "*"] then return (T (binopTCCtoC id xr yr))
-      else return (T (binopBothtoC id xr yr)) -- id `elem` ["<", "<=", ">", ">=", "=", "<>"]
+      else if id `elem` ["+", "-", "*"] then return (T (lift2CCtoC (binop id) rx ry))
+      else return (T (lift2BothtoC (binop id) rx ry)) -- id `elem` ["<", "<=", ">", ">=", "=", "<>"]
   | id `elem` ["~", "inv", "fst", "snd", "floor", "sin", "cos", "tan"] =
       let x = head args in
       if length args /= 1 then error $ "only 1 arguement allowed for " <> id
@@ -390,19 +390,15 @@ imageFunc id args
         case id of
           "fst" ->  return $ fstType x
           "snd" -> return $ sndType x
-          id -> let xr = getRange x in
+          id -> let rx = getRange x in
             if id `elem` ["sin", "cos", "tan"] then
               Mk (\k ->
               (do
-              r <- liftMId (mapM1 (triRange id)) xr
+              r <- liftMId (mapM1 (triRange id)) rx
               k (T r)))
-            else if id == "floor" then return $ T (minopTUCtoC id xr)
-            else return $ T (minopTId id xr)
+            else if id == "floor" then return $ T (liftUCtoC (minop id) rx)
+            else return $ T ( liftId (minop id) rx)
   where
-    binopTCCtoC id rx ry = lift2CCtoC (binop id) rx ry
-    binopBothtoC id rx ry = lift2BothtoC (binop id) rx ry
-    minopTId id rx = liftId (minop id) rx
-    minopTUCtoC id rx = liftUCtoC (minop id) rx
     mapM1 f xs =
       do
         xs' <- mapM f (toList xs)
@@ -457,6 +453,8 @@ imageFunc id args
         (lb, lbt1, lbt2) = minimum bds
         ubt = if Open `elem` [ubt1, ubt2] then Open else Closed
         lbt = if Open `elem` [lbt1, lbt2] then Open else Closed
+    
+ 
     less xs ys
       | xMin >=! yMax = singleton (Finite 0 <=..<= Finite 0)
       | xMax <! yMin = singleton (Finite 1 <=..<= Finite 1)
@@ -671,48 +669,53 @@ range env (Variable x) = let d = find env x in imageDist env d
 range env Loop {} = return $ T (UC Intervals.whole) --unable to calculate, for safety, return the upperbound
 
 -- Nothing means not NN, can result in the type of high demension, everything demensition can be only Count or only UnCount, or both Count and UCount
-nn :: Type -> Environment Dist -> Expr -> M (Maybe Type)
-nn _ env (Variable x) =
+nn :: Environment Dist -> Expr -> M (Maybe Type)
+nn env (Variable x) =
   do
     r <- imageDist env (find env x)
     return (Just r)
 
-nn _ env (Number n) = return $ Just (T (C (singleton $ Finite n <=..<= Finite n)))
+nn env (Number n) = return $ Just (T (C (singleton $ Finite n <=..<= Finite n)))
 
-nn t env (If e1 e2 e3) =
-  do mt1 <- nn t env e2
-     mt2 <- nn t env e3
-     let res = do
-          t1 <- mt1
-          t2 <- mt2
-          if checkType t1 t2 then return (unionType t1 t2) else Nothing
-     return res
+nn env (If e1 e2 e3) =
+  do 
+    t <- range env e1
+    if t == T (C $ singleton (Finite 0 <=..<= Finite 0)) then nn env e3
+    else if t == T (C $ singleton (Finite 1 <=..<= Finite 1)) then nn env e2
+    else do
+      mt1 <- nn env e2
+      mt2 <- nn env e3
+      let res = do
+           t1 <- mt1
+           t2 <- mt2
+           if checkType t1 t2 then return (unionType t1 t2) else Nothing
+      return res
 
-nn t env (Apply (Variable "+") xs)
-  | null $ freeVars (head xs) = nn t env (last xs)
-  | null $ freeVars (last xs) = nn t env (head xs)
-  | otherwise = nn t env (Pair (head xs, last xs))
+nn env (Apply (Variable "+") xs)
+  | null $ freeVars (head xs) = nn env (last xs)
+  | null $ freeVars (last xs) = nn env (head xs)
+  | otherwise = nn env (Pair (head xs, last xs))
 
-nn _ _ _ = return Nothing
+nn  _ _ = return Nothing
 
 ac :: Dist -> Type -> M Bool
 ac d t =
   do
-    mt <- ac' t empty_env d
+    mt <- ac' empty_env d
     return (Just True == do
       t' <- mt
       return $ checkType t' t)
 
-ac' :: Type -> Environment Dist -> Dist -> M (Maybe Type)
-ac' _ env d@(PrimD t _ _)=
+ac' :: Environment Dist -> Dist -> M (Maybe Type)
+ac' env d@(PrimD t _ _)=
   do rs <- imageDist env d
      return (Just rs)
-ac' t env (Return e) =  nn t env e
-ac' t env (Score e d) = ac' t env d
-ac' t env (Let (Rand x d1) d2) =
+ac' env (Return e) =  nn env e
+ac' env (Score e d) = ac' env d
+ac' env (Let (Rand x d1) d2) =
   do
-    _ <- ac' t env d1
-    ac' t (define env x d1) d2
+    _ <- ac' env d1
+    ac' (define env x d1) d2
 
 init_env :: Env
 init_env =

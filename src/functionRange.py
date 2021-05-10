@@ -3,8 +3,6 @@ from wolframclient.language import wl, wlexpr
 from wolframclient.deserializers import WXFConsumer, binary_deserialize
 from wolframclient.serializers import export, wolfram_encoder
 import wolframclient
-import time
-import msgpack
 
 class InEqConsumer(WXFConsumer):
     ineq = wl.Inequality
@@ -12,6 +10,7 @@ class InEqConsumer(WXFConsumer):
     less = wl.Less
     gtEq = wl.GreaterEqual
     gt = wl.Greater
+    eq = wl.Equal
     def build_function(self, head, args, **kwargs):
         with WolframLanguageSession() as session:
             def f1(x):
@@ -57,6 +56,13 @@ class InEqConsumer(WXFConsumer):
                         return ((b,bt), None)
                 else:
                     return super().build_function(head, args, **kwargs)
+            elif head == self.eq and len(args) == 2:
+                b = None
+                if isinstance(args[0], wolframclient.language.expression.WLSymbol):
+                    b = f1(args[1])
+                else:
+                    b = f1(args[0])
+                return ((b, 'Closed'), (b, 'Closed'))
             else:
                 return super().build_function(head, args, **kwargs)
             
@@ -76,3 +82,5 @@ def calRange(f, lb, lbt, ub, ubt):
         session.terminate()
         return res
 
+if __name__ == "__main__":
+    print(calRange("Sin", 0, "Closed", 0, "Closed"))
