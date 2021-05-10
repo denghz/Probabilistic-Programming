@@ -382,7 +382,7 @@ imageFunc id args
       let rx = getRange x in let ry = getRange y in
       if length args /= 2 then  error $ "only 2 arguement allowed for " <> id
       else if id `elem` ["+", "-", "*"] then return (T (lift2CCtoC (binop id) rx ry))
-      else return (T (lift2BothtoC (binop id) rx ry)) -- id `elem` ["<", "<=", ">", ">=", "=", "<>"]
+      else return (T $ C (unions [comp id x y | x <- rangeToList rx, y <- rangeToList ry ])) -- id `elem` ["<", "<=", ">", ">=", "=", "<>"]
   | id `elem` ["~", "inv", "fst", "snd", "floor", "sin", "cos", "tan"] =
       let x = head args in
       if length args /= 1 then error $ "only 1 arguement allowed for " <> id
@@ -403,6 +403,14 @@ imageFunc id args
       do
         xs' <- mapM f (toList xs)
         return (fromList xs')
+    comp id =
+      case id of 
+        "<" -> less
+        "<=" -> lessEq
+        ">" -> gt
+        ">=" -> gtEq
+        "=" -> eq
+        "<>" -> notEq
     minop id =
       case id of
         "~" -> map1Ints neg
@@ -415,12 +423,6 @@ imageFunc id args
         "+" -> map2Ints plus
         "-" -> map2Ints minus
         "*" -> map2Ints mul
-        "<" -> less
-        "<=" -> lessEq
-        ">" -> gt
-        ">=" -> gtEq
-        "=" -> eq
-        "<>" -> notEq
     plus x y = interval (lb,lbt) (ub,ubt)
       where
         (lbx, lbxt) = lowerBound' x
@@ -453,12 +455,30 @@ imageFunc id args
         (lb, lbt1, lbt2) = minimum bds
         ubt = if Open `elem` [ubt1, ubt2] then Open else Closed
         lbt = if Open `elem` [lbt1, lbt2] then Open else Closed
+
+    isLt (r1,b1) (r2,b2) =
+       (b1 || all isSingleton rs1') && (b2 || all isSingleton rs2')
+      where
+        rs1 = toDescList r1
+        rs2 = toDescList r2
+        rs2' = filter (\l -> lowerBound l < upperBound (head rs1)) rs2
+        rs1' = filter (\s -> upperBound s > lowerBound (last rs2)) rs1
+
+    falseRange = singleton (Finite 0 <=..<= Finite 0)
+    trueRange = singleton (Finite 1 <=..<= Finite 1)
+    -- case not handled (negInf, 0) Intersection Z < ((negInf, 0) Intersection Z) union [1,2] should be true
     
- 
-    less xs ys
-      | xMin >=! yMax = singleton (Finite 0 <=..<= Finite 0)
-      | xMax <! yMin = singleton (Finite 1 <=..<= Finite 1)
-      | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
+    rangeToList (C r) = [(r, True)]
+    rangeToList (UC r) = [(r, False)]
+    rangeToList (B r1 r2) = [(r1, True), (r2, False)]
+
+    less (r1, True) (r2, True) =lessCC r1 r2
+    less r1 r2 = lessUCC r1 r2
+
+    lessCC xs ys
+      | xMin >=! yMax = falseRange
+      | xMax <! yMin = trueRange
+      | otherwise = unions [trueRange, falseRange]
         where
           xDescList = toDescList xs
           xMax = head xDescList
@@ -466,7 +486,15 @@ imageFunc id args
           yDescList = toDescList ys
           yMax = head xDescList
           yMin = last xDescList
-    lessEq xs ys
+
+    lessUCC (xs, xb) (ys, yb)
+      | (xs, xb) `isLt` (ys, yb) = trueRange
+      | (ys, yb) `isLt` (xs, xb) = falseRange
+      | otherwise = unions [trueRange, falseRange]
+
+    lessEq (r1, True) (r2, True) = lessEqCC r1 r2
+    lessEq r1 r2 = lessUCC r1 r2 
+    lessEqCC xs ys
       | xMin >! yMax = singleton (Finite 0 <=..<= Finite 0)
       | xMax <=! yMin = singleton (Finite 1 <=..<= Finite 1)
       | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
@@ -477,36 +505,30 @@ imageFunc id args
           yDescList = toDescList ys
           yMax = head xDescList
           yMin = last xDescList
-    gt xs ys
-      | xMax <=! yMin = singleton (Finite 0 <=..<= Finite 0)
-      | xMin >! yMax = singleton (Finite 1 <=..<= Finite 1)
-      | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-        where
-          xDescList = toDescList xs
-          xMax = head xDescList
-          xMin = last xDescList
-          yDescList = toDescList ys
-          yMax = head xDescList
-          yMin = last xDescList
-    gtEq xs ys
-      | xMax <! yMin = singleton (Finite 0 <=..<= Finite 0)
-      | xMin >=! yMax = singleton (Finite 1 <=..<= Finite 1)
-      | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-        where
-          xDescList = toDescList xs
-          xMax = head xDescList
-          xMin = last xDescList
-          yDescList = toDescList ys
-          yMax = head xDescList
-          yMin = last xDescList
-    eq xs ys
-      | Intervals.null (Intervals.intersection xs ys) = singleton (Finite 0 <=..<= Finite 0)
-      | Intervals.null (difference xs ys) = singleton (Finite 1 <=..<= Finite 1)
-      | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
-    notEq xs ys
-      | Intervals.null (Intervals.intersection xs ys) = singleton (Finite 1 <=..<= Finite 1)
-      | Intervals.null (difference xs ys) = singleton (Finite 0 <=..<= Finite 0)
-      | otherwise = fromList [Finite 0 <=..<= Finite 0, Finite 1 <=..<= Finite 1]
+
+    gt r1 r2 = 
+      let lsEq = lessEq r1 r2 in
+      if lsEq == trueRange then falseRange
+      else if lsEq == falseRange then trueRange
+      else unions [trueRange, falseRange]
+      
+    gtEq r1 r2 =
+      let ls = less r1 r2 in
+      if ls == trueRange then falseRange
+      else if ls == falseRange then trueRange
+      else unions [trueRange, falseRange]
+
+    eq r1 r2 =
+      if gt r1 r2 == trueRange || less r1 r2 == trueRange then falseRange
+      else case (r1, r2) of
+        ((i1, True), (i2, True)) -> let i1s = toList i1 in let i2s = toList i2 in 
+          if i1 == i2 && length i1s == 1 && isSingleton (head i1s) 
+            then trueRange else unions [trueRange, falseRange]
+        _ -> unions [trueRange, falseRange]
+  
+    notEq r1 r2 = 
+      if eq r1 r2 == trueRange then falseRange else trueRange
+
     neg xs = interval (-ub,ubt) (-lb,lbt)
       where
         (lb, lbt) = lowerBound' xs
@@ -678,7 +700,7 @@ nn env (Variable x) =
 nn env (Number n) = return $ Just (T (C (singleton $ Finite n <=..<= Finite n)))
 
 nn env (If e1 e2 e3) =
-  do 
+  do
     t <- range env e1
     if t == T (C $ singleton (Finite 0 <=..<= Finite 0)) then nn env e3
     else if t == T (C $ singleton (Finite 1 <=..<= Finite 1)) then nn env e2
