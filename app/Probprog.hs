@@ -11,7 +11,7 @@ import Data.Interval hiding(null, singleton, intersections, member, isSubsetOf)
 import qualified Data.Interval as Interval(member, whole)
 import Environment
 import Control.Monad(liftM, ap)
-import Data.Maybe(isJust)
+import Data.Maybe(isJust, fromJust)
 import Data.Char
 import Data.Bifunctor
 import Data.Bitraversable
@@ -49,6 +49,10 @@ getC (C r) = Just r
 getC (UC r) = Nothing
 getC (B r1 r2) = Just r1
 
+rangeToList :: Range -> [(IntervalSet Double, Bool)]
+rangeToList (C r) = [(r, True)]
+rangeToList (UC r) = [(r, False)]
+rangeToList (B r1 r2) = [(r1, True), (r2, False)]
 
 liftMId :: Monad m => (IntervalSet Double -> m (IntervalSet Double)) -> Range -> m Range
 liftMId f (C r) = do {r' <- f r; return $ C r'}
@@ -404,7 +408,7 @@ imageFunc id args
         xs' <- mapM f (toList xs)
         return (fromList xs')
     comp id =
-      case id of 
+      case id of
         "<" -> less
         "<=" -> lessEq
         ">" -> gt
@@ -467,10 +471,8 @@ imageFunc id args
     falseRange = singleton (Finite 0 <=..<= Finite 0)
     trueRange = singleton (Finite 1 <=..<= Finite 1)
     -- case not handled (negInf, 0) Intersection Z < ((negInf, 0) Intersection Z) union [1,2] should be true
-    
-    rangeToList (C r) = [(r, True)]
-    rangeToList (UC r) = [(r, False)]
-    rangeToList (B r1 r2) = [(r1, True), (r2, False)]
+
+
 
     less (r1, True) (r2, True) =lessCC r1 r2
     less r1 r2 = lessUCC r1 r2
@@ -493,7 +495,7 @@ imageFunc id args
       | otherwise = unions [trueRange, falseRange]
 
     lessEq (r1, True) (r2, True) = lessEqCC r1 r2
-    lessEq r1 r2 = lessUCC r1 r2 
+    lessEq r1 r2 = lessUCC r1 r2
     lessEqCC xs ys
       | xMin >! yMax = singleton (Finite 0 <=..<= Finite 0)
       | xMax <=! yMin = singleton (Finite 1 <=..<= Finite 1)
@@ -506,12 +508,12 @@ imageFunc id args
           yMax = head xDescList
           yMin = last xDescList
 
-    gt r1 r2 = 
+    gt r1 r2 =
       let lsEq = lessEq r1 r2 in
       if lsEq == trueRange then falseRange
       else if lsEq == falseRange then trueRange
       else unions [trueRange, falseRange]
-      
+
     gtEq r1 r2 =
       let ls = less r1 r2 in
       if ls == trueRange then falseRange
@@ -521,12 +523,12 @@ imageFunc id args
     eq r1 r2 =
       if gt r1 r2 == trueRange || less r1 r2 == trueRange then falseRange
       else case (r1, r2) of
-        ((i1, True), (i2, True)) -> let i1s = toList i1 in let i2s = toList i2 in 
-          if i1 == i2 && length i1s == 1 && isSingleton (head i1s) 
+        ((i1, True), (i2, True)) -> let i1s = toList i1 in let i2s = toList i2 in
+          if i1 == i2 && length i1s == 1 && isSingleton (head i1s)
             then trueRange else unions [trueRange, falseRange]
         _ -> unions [trueRange, falseRange]
-  
-    notEq r1 r2 = 
+
+    notEq r1 r2 =
       if eq r1 r2 == trueRange then falseRange else trueRange
 
     neg xs = interval (-ub,ubt) (-lb,lbt)
@@ -713,12 +715,70 @@ nn env (If e1 e2 e3) =
            if checkType t1 t2 then return (unionType t1 t2) else Nothing
       return res
 
-nn env (Apply (Variable "+") xs)
-  | null $ freeVars (head xs) = nn env (last xs)
-  | null $ freeVars (last xs) = nn env (head xs)
-  | otherwise = nn env (Pair (head xs, last xs))
+nn env (Apply (Variable "+") xs) =
+  if length xs /= 2 then error "+ takes two arguments"
+    else
+  do
+      ts <- nn env (Pair (head xs, last xs))
+      let ts' = do
+            t <- ts
+            let t1 = fstType t
+            let t2 = sndType t
+            return [t1, t2]
+      mapM (imageFunc "+") ts'
 
-nn  _ _ = return Nothing
+nn env (Apply (Variable "*") xs) =
+  if length xs /= 2 then error "* takes two arguments"
+    else
+  do
+    ts <- nn env (Pair (head xs, last xs))
+    t1 <- nn env (head xs)
+    t2 <- nn env (last xs)
+    let ts' =
+          if isJust ts then
+            do
+              t <- ts
+              let t1 = fstType t
+              let t2 = sndType t
+              return [t1, t2]
+          else
+            do
+              t1' <- t1
+              t2' <- t2
+              if not (memberType 0 t1' && memberType 0 t2')
+                then return [t1', t2']
+              else Nothing
+    mapM (imageFunc "*") ts'
+  where
+    memberType n t =
+      let t' = getRange t in
+       all (Intervals.member n . fst) (rangeToList t')
+
+nn env (Apply (Variable id) xs)
+  | id `elem` ["~", "inv", "log", "exp", "sin", "cos", "tan", "fst", "snd"] =
+    if length xs /= 1 then error $ id <> " takes two arguments"
+    else
+      do
+        t <- nn env (head xs)
+        let t' = fmap (:[]) t
+        mapM (imageFunc id) t'
+  | otherwise = error $ id <> " not implemeneted"
+
+nn env (Pair (x,y)) =
+  do
+    xt <- nn env x
+    yt <- nn env y
+    let t =
+          do
+            xt' <- xt
+            yt' <- yt
+            if checkType xt' yt' then return $ P xt' yt'
+            else Nothing
+    return t
+
+nn env Loop {} = return Nothing
+
+
 
 ac :: Dist -> Type -> M Bool
 ac d t =
