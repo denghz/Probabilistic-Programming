@@ -245,7 +245,7 @@ imageFunc id args
       if length args /= 2 then  error $ "only 2 arguement allowed for " <> id
       else if id `elem` ["+", "-", "*"] then return (T (lift2CCtoC (binop id) rx ry))
       else return (T $ C (unions [comp id x y | x <- rangeToList rx, y <- rangeToList ry ])) -- id `elem` ["<", "<=", ">", ">=", "=", "<>"]
-  | id `elem` ["~", "inv", "fst", "snd", "floor", "sin", "cos", "tan"] =
+  | id `elem` ["~", "inv", "fst", "snd", "floor", "sin", "cos", "tan", "exp"] =
       let x = head args in
       if length args /= 1 then error $ "only 1 arguement allowed for " <> id
       else
@@ -609,7 +609,8 @@ nnTuple env p@(Pair (p1,p2)) =
   let allDiff = all diffFunction (flatPair p) in
   do
     xs <- mapM (fmap (getRange . fromJust) . nn env . Variable) vars
-    if not (all isUC xs) || not allDiff then return Nothing
+    if not (all isUC xs) || not allDiff then 
+      log_ (show p <> " domains are not all uncount, or not differentiable") $ return Nothing
     else
       let xs' = map (toList.getUC) xs in
       let vs = zip (map T.pack vars) $ map (map intervalToTuple) xs' in
@@ -680,6 +681,7 @@ nn env e@(Apply (Variable "+") xs) =
               let t2 = sndType t
               return [t1, t2]
         mapM (imageFunc "+") ts')
+    -- nnDiff env e
     if isJust t then log_ ("apply NN-PLUS on " <> show e) $ return t
     else nnDiff env e
 
@@ -710,7 +712,7 @@ nn env e@(Apply (Variable "*") xs) =
             | otherwise = show e <> " is not NN-Mult and NN-Scale"
       log_ l $ mapM (imageFunc "*") ts'
 
-    if isJust t then log_ ("apply NN-DIFF on " <> show e) $ return t
+    if isJust t then  return t
     else nnDiff env e
   where
     memberType n t =
@@ -732,7 +734,6 @@ nn env e@(Apply (Variable id) xs)
 
 nn env p@(Pair (x,y)) =
   do
-
     t <- do
       xt <- nn env x
       yt <- nn env y
@@ -745,17 +746,13 @@ nn env p@(Pair (x,y)) =
       else if all isJust [xtUC, ytUC] then
           log_ ("apply NN-Fix on " <> show p) $ return $ Just (P (fromJust xtUC) (fromJust ytUC))
       else log_ (show p <> " is not NN-Fix or NN-Pair") $ return Nothing
-    if isJust t then log_ ("apply NN-Tuple on " <> show p) $ return t
-    else nnTuple env p
+    if isJust t then return t else nnTuple env p
 
 
 nn env e@Loop {} = log_ ("loop is not nn, " <> show e) $ return Nothing
 
 nnUC :: Environment Dist -> Expr -> M (Maybe Type)
-nnUC env (Variable x) = log_ ("Apply NN-Var UC on " <> x) $
-  do
-    r <- imageDist env (find env x)
-    return $ Just (mapType rangeBtoUC r)
+nnUC env (Variable x) = log_ ("Apply NN-Var UC on " <> x) $ nn env (Variable x)
 nnUC env (Number n) = log_ ("Apply NN-Count UC on " <> show n) $ nn env (Number n)
 nnUC env e@(If e1 e2 e3) =
   do

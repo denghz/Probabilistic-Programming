@@ -218,7 +218,7 @@ ac :: Dist -> Type -> M Bool
 ac d t =
   do
     mt <- ac' empty_env d
-    return (Just True == do
+    log_ ("Expected: " <> show t <> ", Actual: " <> show mt) $ return (Just True == do
       t' <- mt
       return $ checkType t' t)
 
