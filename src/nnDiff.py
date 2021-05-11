@@ -51,7 +51,6 @@ def nnDiff(e, vs):
     # print("conds" + str(conds))
     with WolframLanguageSession() as session:
         session.evaluate("Inv[x_] := 1/x")
-        session.evaluate("Neg[x_] := -x")
         f = wlexpr(str(Func(e)))
         wlvs = list(map(wlexpr,variables))
         gradient = session.evaluate(wl.Grad(f, wlvs))

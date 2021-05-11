@@ -26,8 +26,9 @@ class Func:
 
 
 
-def nnFix(e,vs):
+def nnTuple(e,vs):
     with WolframLanguageSession() as session:
+        session.evaluate("Inv[zzz_] := 1/zzz")
         varsAndRanges = list(zip(*vs))
         variables = varsAndRanges[0]
         # print("variable" + str(variables))
@@ -66,4 +67,4 @@ def nnFix(e,vs):
 if __name__ == "__main__":
     e = [["Plus", "Times", "x", "x", "y"], ["Subtract", "x", "y"]]
     vs = [('x',[(0, "Closed", 1, "Closed"), (10, "Open", 11, "Closed")])]
-    print(nnFix(e,vs))
+    print(nnTuple(e,vs))

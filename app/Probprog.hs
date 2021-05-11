@@ -5,6 +5,7 @@ import Parser
 import Environment
 import Continuation
 import NN
+import Log
 
 -- An environment is a map from identifiers to values
 
@@ -71,7 +72,9 @@ eval e _ =
   error ("can't evaluate " <> show e)
 
 simplify :: Env -> Dist -> M Dist
-simplify e d = simplify' e (standardise d)
+simplify e d = do
+  d <- simplify' e (standardise d)
+  log_ ("simplification result: " <> show d) (return d)
 
 simplify' :: Env -> Dist -> M Dist
 simplify' env (Return e) = Return <$> partialEval env e
@@ -279,7 +282,7 @@ obey (Calculate (dist, t)) env =
     b <- ac d t
     return (d,b)
   )
-  (\(d,b) -> do putStrLn (print_value d <> show b);return env)
+  (\(d,b) -> do putStrLn ("ac "<> show b);return env)
 
 obey (Evaluate exp) env =
   applyK (eval env exp) (\v -> do putStrLn $ print_value v;return env)

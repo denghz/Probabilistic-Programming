@@ -52,5 +52,5 @@ log_ l m =
       m' <- m 
       Mk (\k ->
           do 
-            putStr l
+            putStrLn l
             k m')

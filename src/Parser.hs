@@ -135,8 +135,8 @@ p_buildInDist =
       "Roll" -> do e <- p_lrpar p_expr; return (PrimD DZ "Roll" [e])
       "WRoll" -> do ps <- p_lrpar $ p_list0 p_pair COMMA;
                     return (PrimD DZ "WRoll" ps)
-      "Uniform" -> PrimD DR "Uniform" . (:[]) <$> p_pair
-      "Normal" -> PrimD DR "Normal" . (:[]) <$> p_pair
+      "Uniform" -> PrimD DR "Uniform" . (\(Pair (x,y)) -> [x, y]) <$> p_pair
+      "Normal" -> PrimD DR "Normal" . (\(Pair (x,y)) -> [x, y]) <$> p_pair
       _ -> p_fail
 
 p_expr :: Parser Token Expr
