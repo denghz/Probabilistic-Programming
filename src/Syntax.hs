@@ -1,7 +1,13 @@
-module Syntax where
 
+module Syntax where
+import Data.IntervalSet(IntervalSet(..))
+data Type = T Range | P Type Type
+  deriving (Eq, Show)
+data Range =
+  C (IntervalSet Double) | UC (IntervalSet Double) | B (IntervalSet Double) (IntervalSet Double)
+  deriving (Eq, Show)
 data Phrase =                 
-    Calculate Dist
+    Calculate (Dist, Type)
   | Evaluate Expr            
   | Define Defn               
   deriving Show

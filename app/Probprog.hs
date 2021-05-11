@@ -211,10 +211,6 @@ newIdent env = head $ filter (\x -> x `notElem` names env) allStrings
   where
     allStrings = [c:s | s <- "":allStrings, c <- ['a'..'z'] <> ['0'..'9']]
 
-
-
-
-
 ac :: Dist -> Type -> M Bool
 ac d t =
   do
@@ -276,8 +272,14 @@ instance Show Value where
 
 obey :: Phrase -> Env -> IO Env
 
-obey (Calculate dist) env =
-  applyK (simplify env dist) (\v -> do putStrLn $ print_value v;return env)
+obey (Calculate (dist, t)) env =
+  applyK (
+  do 
+    d <- simplify env dist
+    b <- ac d t
+    return (d,b)
+  )
+  (\(d,b) -> do putStrLn (print_value d <> show b);return env)
 
 obey (Evaluate exp) env =
   applyK (eval env exp) (\v -> do putStrLn $ print_value v;return env)

@@ -102,9 +102,7 @@ mapER :: Extended a -> Maybe a
 mapER (Finite n) = Just n
 mapER _ = Nothing
 
-data Range =
-  C (IntervalSet Double) | UC (IntervalSet Double) | B (IntervalSet Double) (IntervalSet Double)
-  deriving (Eq, Show)
+
   -- either count or uncount or both are possible
   -- Boundary of C set is in the set
 isUC :: Range -> Bool
@@ -175,8 +173,6 @@ lift2CCtoC op (B r1 r2) (UC r3) = UC ((r1 `op` r3) `union` (r2 `op` r3))
 lift2CCtoC op (B r1 r2) (B r3 r4) = B (r1 `op` r3) (unions [r1 `op` r3, r1 `op` r4, r2 `op` r4])
 
 
-data Type = T Range | P Type Type
-  deriving (Eq, Show)
 
 checkType :: Type -> Type -> Bool
 checkType (P t1 t2) (P t3 t4) = checkType t1 t3 && checkType t2 t4
