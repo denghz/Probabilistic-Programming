@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Probprog(main,eval,init_env) where
 import Parsing(dialog, print_defn, print_value)
 import Syntax
