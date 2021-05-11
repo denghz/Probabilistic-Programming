@@ -441,6 +441,24 @@ map1Ints f xs = fromList [f x | x <- toList xs]
 
 map2Ints :: (Interval Double -> Interval Double -> Interval Double) -> IntervalSet Double -> IntervalSet Double -> IntervalSet Double
 map2Ints f xs ys = fromList [f x y | x <- toList xs, y <- toList ys]
+
+
+intervalToTuple :: Interval a -> (Maybe a, Text, Maybe a, Text)
+intervalToTuple interval =
+      (mapER lb, T.pack (show lbt), mapER ub, T.pack (show ubt))
+      where
+        (lb, lbt) = lowerBound' interval
+        (ub, ubt) = upperBound' interval
+
+justLookupFunctionName :: String -> Text
+justLookupFunctionName id = fromJust $ lookup id functionNameMap
+
+transfromExpPN :: Expr -> [Text]
+transfromExpPN (Apply (Variable id) es) =
+  justLookupFunctionName id:concatMap transfromExpPN es
+transfromExpPN (Number n) = [T.pack $ show n]
+transfromExpPN (Variable id) = [T.pack id]
+
 -- All builtin function should be considered
 imageFunc :: Ident -> [Type] -> M Type
 imageFunc id args
@@ -789,16 +807,6 @@ nnDiff env e =
             else k Nothing
           )
   where
-    intervalToTuple interval =
-      (mapER lb, T.pack (show lbt), mapER ub, T.pack (show ubt))
-      where
-        (lb, lbt) = lowerBound' interval
-        (ub, ubt) = upperBound' interval
-    justLookupFunctionName id = fromJust $ lookup id functionNameMap
-    transfromExpPN (Apply (Variable id) es) =
-      justLookupFunctionName id:concatMap transfromExpPN es
-    transfromExpPN (Number n) = [T.pack $ show n]
-    transfromExpPN (Variable id) = [T.pack id]
     diffCheck e vs = 
       do 
         Py.initialize
@@ -815,7 +823,46 @@ nnDiff env e =
         Py.finalize
         return (res :: Bool)
 
+nnFix :: Environment Dist -> Expr -> M (Maybe Type)
+nnFix env p@(Pair (p1,p2)) = 
+  let eList = map transfromExpPN $ flatPair p in
+  let vars = freeVars p in 
+  do
+    xs <- mapM (fmap (getRange . fromJust) . nn env . Variable) vars
+    if not (all isUC xs) then return Nothing
+    else 
+      let xs' = map (toList.getUC) xs in
+      let vs = zip (map T.pack vars) $ map (map intervalToTuple) xs' in 
+      do
+        t <- imageExpr env p
+        Mk (\k -> 
+          do
+            b <- fixCheck eList vs
+            if b then k (Just t)
+            else k Nothing
+          )
+  
 
+  where
+    flatPair (Pair (p1,p2)) = flatPair p1 <> flatPair p2
+    flatPair e = [e]
+    fixCheck e vs = 
+      do 
+        Py.initialize
+        pythonpath <- Py.getPath
+        T.putStrLn ("Python path at startup is: " <> pythonpath <> "\n")
+        -- Appending so that the user's PYTHONPATH variable (ready by python) can go first.
+        let updatedPytonpath = pythonpath <> ":/usr/lib/python2.7/dist-packages:/home/dhz/.local/lib/python3.6/site-packages:/usr/local/lib/python3.6/dist-packages:/usr/lib/python3/dist-packages:./src"
+        T.putStrLn ("Setting Python path to: " <> updatedPytonpath <> "\n")
+        Py.setPath updatedPytonpath
+
+        let nnFix = call "nnFix" "nnFix"
+
+        res <- nnFix [arg e, arg vs] []
+        Py.finalize
+        return (res :: Bool)
+       
+      
 -- Nothing means not NN, can result in the type of high demension, everything demensition can be only Count or only UnCount, or both Count and UCount
 nn :: Environment Dist -> Expr -> M (Maybe Type)
 nn env (Variable x) =
@@ -897,24 +944,27 @@ nn env e@(Apply (Variable id) xs)
           mapM (imageFunc id) t'
   | otherwise = error $ id <> " not implemeneted"
 
-nn env (Pair (x,y)) =
+nn env p@(Pair (x,y)) =
   do
-    xt <- nn env x
-    yt <- nn env y
-    xtUC <- nnUC env x
-    ytUC <- nnUC env y
-    let intersectVars = filter (`elem` freeVars x) (freeVars y)
-    intersT <- mapM (nn env . Variable) intersectVars
-    let t =
-          do
-            xt' <- xt
-            yt' <- yt
-            if (null intersectVars || all isCountType (catMaybes intersT)) && checkType xt' yt'
-              then return $ P xt' yt'
-            else if all isJust [xtUC, ytUC] then
-              return $ P (fromJust xtUC) (fromJust ytUC)
-            else Nothing
-    return t
+    t <- nnFix env p
+    if isJust t then return t
+    else do
+      xt <- nn env x
+      yt <- nn env y
+      xtUC <- nnUC env x
+      ytUC <- nnUC env y
+      let intersectVars = filter (`elem` freeVars x) (freeVars y)
+      intersT <- mapM (nn env . Variable) intersectVars
+      let t =
+            do
+              xt' <- xt
+              yt' <- yt
+              if (null intersectVars || all isCountType (catMaybes intersT)) && checkType xt' yt'
+                then return $ P xt' yt'
+              else if all isJust [xtUC, ytUC] then
+                return $ P (fromJust xtUC) (fromJust ytUC)
+              else Nothing
+      return t
 
 nn env Loop {} = return Nothing
 
