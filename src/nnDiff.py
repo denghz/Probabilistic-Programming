@@ -6,7 +6,7 @@ import wolframclient
 import numbers
 
 functions1 = ("Sin", "Cos", "Tan", "Exp", "Log", "Minus", "Inv")
-functions2 = ("Plus", "Substract", "Times")
+functions2 = ("Plus", "Subtract", "Times")
 class Func:
     def __init__(self, pn):
         self.name = pn[0]
@@ -81,7 +81,7 @@ def countableManySolution(f):
                  #r[0] is variable, r[1] is conditional expression
                 if (isinstance(conditionalExpression, numbers.Number)):
                     return True
-                else:
+                elif conditionalExpression.head == "ConditionalExpression":
                     condition = conditionalExpression.args[1]
                     exp = conditionalExpression.args[0]
                     getfreeVars = wlexpr("Reduce`FreeVariables")
