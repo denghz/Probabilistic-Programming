@@ -42,6 +42,7 @@ import Control.Monad(liftM, ap)
 import Data.Maybe(isJust, fromJust, catMaybes)
 import Syntax
 import Continuation
+import Log
 
 
 freeVars :: Expr -> [Ident]
@@ -745,11 +746,11 @@ nn env p@(Pair (x,y)) =
 nn env Loop {} = return Nothing
 
 nnUC :: Environment Dist -> Expr -> M (Maybe Type)
-nnUC env (Variable x) =
+nnUC env (Variable x) = log_ ("Apply NN-Var on " <> x) $
   do
     r <- imageDist env (find env x)
     return $ Just (mapType rangeBtoUC r)
-nnUC env (Number n) = nn env (Number n)
+nnUC env (Number n) = log_ ("Apply NN-Count on " <> show n) $ nn env (Number n)
 nnUC env (If e1 e2 e3) =
   do
     t <- range env e1
