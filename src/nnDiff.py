@@ -35,9 +35,9 @@ class Func:
 def nnDiff(e, vs):
     varsAndRanges = list(zip(*vs))
     variables = varsAndRanges[0]
-    # print("variable" + str(variables))
+    print("variable " + str(variables))
     ranges = varsAndRanges[1]
-    # print("ranges" + str(ranges))
+    print("ranges " + str(ranges))
     def rangeToWlexpr(var, lb, lbt, ub, ubt):
         lbt = '<' if lbt == 'Open' else '<='
         ubt = '<' if ubt == 'Open' else '<='
@@ -48,29 +48,34 @@ def nnDiff(e, vs):
     for i in range(len(variables)):
         var = variables[i]
         conds.append(wl.Or(*map(lambda r:rangeToWlexpr(var, *r), ranges[i])))
-    # print("conds" + str(conds))
+    
     with WolframLanguageSession() as session:
         session.evaluate("Inv[x_] := 1/x")
         f = wlexpr(str(Func(e)))
+        print("input expression " + str(f))
         wlvs = list(map(wlexpr,variables))
         gradient = session.evaluate(wl.Grad(f, wlvs))
-        # print("gradient", gradient)
+        print("gradient ", gradient)
         for g in gradient:
             g = session.evaluate(wl.FullSimplify(g))
             # print(g)
             eq = wl.Equal(g, 0)
             
             res = session.evaluate(wl.Solve(wl.And([eq] + conds), wlvs, wl.Reals))
-            # print(res)
-            if (countableManySolution(res)):
+            print("solution of derivative " + str(g) + " == 0 " + str(res))
+            c = countableManySolution(res)
+            if c:
                 return True
+            print("Is that countable? " + str(c))
         return False
 
 def countableManySolution(f):
     with WolframLanguageSession() as session:
         if f == ():
+            print(str(f) + " is empty set, than countable")
             return True
         elif isinstance(f, tuple):
+            print("try to see if " + str(f) + " is countable")
             for r in f:
                 # for every rule
                 r = r[0]
@@ -79,6 +84,7 @@ def countableManySolution(f):
                 conditionalExpression = r.args[1]
                  #r[0] is variable, r[1] is conditional expression
                 if (isinstance(conditionalExpression, numbers.Number)):
+                    print(str(r) + " is a singleton integer, than countable")
                     return True
                 elif conditionalExpression.head == "ConditionalExpression":
                     condition = conditionalExpression.args[1]
@@ -98,9 +104,13 @@ def countableManySolution(f):
                                 IntVar.extend(list(map(str, var.args)))
                             else:
                                 IntVar.append(str(elem.args[0]))
-
-                    return (all (map (lambda x:str(x) in IntVar, freeVariables)))
-            return False
+                    if not (all (map (lambda x:str(x) in IntVar, freeVariables))):
+                        print(str(r) + " is not countable")
+                        return False
+                    print(str(r) + " is countable")
+                print(str(r) + " is not countable")
+                return False
+            return True
    # 1.empty
    # 2.conditional expression is a number
    # 3.C[n] are integers and No Global Var in Expression

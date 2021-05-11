@@ -31,9 +31,9 @@ def nnTuple(e,vs):
         session.evaluate("Inv[zzz_] := 1/zzz")
         varsAndRanges = list(zip(*vs))
         variables = varsAndRanges[0]
-        # print("variable" + str(variables))
+        print("nnTuple variable " + str(variables))
         ranges = varsAndRanges[1]
-        # print("ranges" + str(ranges))
+        print("nnTuple ranges " + str(ranges))
         def rangeToWlexpr(var, lb, lbt, ub, ubt):
             lbt = '<' if lbt == 'Open' else '<='
             ubt = '<' if ubt == 'Open' else '<='
@@ -46,19 +46,25 @@ def nnTuple(e,vs):
             conds.append(wl.Or(*map(lambda r:rangeToWlexpr(var, *r), ranges[i])))
         wlvs = list(map(wlexpr,variables))
         fs = list(map(lambda x:wlexpr(str(Func(x))), e))
+        print("nnTuple exprs " + str(fs))
         var = [wl.x, wl.y]
         session.evaluate("JDotTransJ[x1_, var_] := Block[{M = ResourceFunction[\"JacobianMatrix\"][x1, var]},Det[M . Transpose[M]]]")
         session.evaluate("Jaco[x1_, var_] := ResourceFunction[\"JacobianMatrix\"][x1, var]")
         jDotTransJ = session.evaluate(wl.Global.JDotTransJ(fs, var))
+        print("nnTuple Det(A*A^T) " + str(jDotTransJ))
         jacobian = session.evaluate(wl.Global.Jaco(fs,var))
+        print("nnTuple Jacobian(A*A^T) " + str(jacobian))
         jacobianList = [element for tupl in jacobian for element in tupl]
         isContinuous = session.function("FunctionContinuous")
         isDeriCont = all(list(map(lambda x:isContinuous([x] + conds,wlvs), jacobianList)))
+        print("nnTuple if all deri conts " + str(isDeriCont))
         if not isDeriCont:
             return False
         eq = wl.LessEqual(jDotTransJ, 0)
         res = session.evaluate(wl.Solve(wl.And([eq] + conds), wlvs, wl.Reals))
+        print("nnTuple solution of det(A*A^T) < 0 " + str(res))
         detGt0 = countableManySolution(res)
+        print("nnTuple solution of det(A*A^T) < 0 countable " + str(detGt0))
         if not detGt0:
             return False
         
