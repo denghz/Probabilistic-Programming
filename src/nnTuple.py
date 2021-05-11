@@ -60,7 +60,7 @@ def nnTuple(e,vs):
         eq = wl.LessEqual(jDotTransJ, 0)
         res = session.evaluate(wl.Solve(wl.And([eq] + conds), wlvs, wl.Reals))
         print("nnTuple solution of det(A*A^T) < 0 " + str(res))
-        detGt0 = countableManySolution(res)
+        detGt0 = countableManySolution(res, variables)
         print("nnTuple solution of det(A*A^T) < 0 countable " + str(detGt0))
         if not detGt0:
             return False

@@ -24,7 +24,7 @@ class Func:
         return self.name + "[" + str(self.arg1) + (", " + (str(self.arg2)) if self.arg2 is not None else "") + "]" 
 
 
-# falseEmp = wlexpr("Solve[Sin[x] + Cos[y] == 0, {x,y}, Reals]")
+falseEmp = wlexpr("Sin[x] + Cos[y] == 0")
 # trueEmp = wlexpr("Solve[Sin[x] + Cos[y] + 2== 0, {x,y}, Reals]")
 # e = wlexpr("Solve[x+0.5 == 0, x, Reals]")
 # e2 = wlexpr("Solve[And[x^2 - 2 y^2 == 1,x > 0,y > 0] , {x, y}, Integers]")
@@ -47,10 +47,12 @@ def nnDiff(e, vs):
     conds = []
     for i in range(len(variables)):
         var = variables[i]
-        conds.append(wl.Or(*map(lambda r:rangeToWlexpr(var, *r), ranges[i])))
+        res = list(map(lambda r:rangeToWlexpr(var, *r), ranges[i]))
+        if res != []:
+            conds.append(wl.Or(*res))
     
     with WolframLanguageSession() as session:
-        session.evaluate("Inv[x_] := 1/x")
+        session.evaluate("Inv[zzz_] := 1/zzz")
         f = wlexpr(str(Func(e)))
         print("input expression " + str(f))
         wlvs = list(map(wlexpr,variables))
@@ -60,19 +62,20 @@ def nnDiff(e, vs):
             g = session.evaluate(wl.FullSimplify(g))
             # print(g)
             eq = wl.Equal(g, 0)
-            
-            res = session.evaluate(wl.Solve(wl.And([eq] + conds), wlvs, wl.Reals))
-            print("solution of derivative " + str(g) + " == 0 " + str(res))
-            c = countableManySolution(res)
+            #  
+            res = session.evaluate(wl.Solve(wl.And([eq] + conds), wlvs , wl.Reals))
+            print("solution of " + str(wl.And([eq] + conds)) + " is " + str(res))
+            c = countableManySolution(res, ['x','y'])
             if c:
                 return True
-            print("Is that countable? " + str(c))
         return False
 
-def countableManySolution(f):
+def countableManySolution(f, vs):
+    vs = list(map(lambda v:"Global`" + v, vs)) + vs
     with WolframLanguageSession() as session:
+        getfreeVars = wlexpr("Reduce`FreeVariables")
         if f == ():
-            print(str(f) + " is empty set, than countable")
+            print(str(f) + " is empty set, then countable")
             return True
         elif isinstance(f, tuple):
             print("try to see if " + str(f) + " is countable")
@@ -85,11 +88,10 @@ def countableManySolution(f):
                  #r[0] is variable, r[1] is conditional expression
                 if (isinstance(conditionalExpression, numbers.Number)):
                     print(str(r) + " is a singleton integer, then countable")
-                    return True
-                elif conditionalExpression.head == "ConditionalExpression":
+                    continue
+                elif str(conditionalExpression.head) == "ConditionalExpression":
                     condition = conditionalExpression.args[1]
                     exp = conditionalExpression.args[0]
-                    getfreeVars = wlexpr("Reduce`FreeVariables")
                     freeVariables = list(map(str, session.evaluate(getfreeVars(exp))))
                     elems = []
                     if str(condition.head) == "And":
@@ -104,19 +106,26 @@ def countableManySolution(f):
                                 IntVar.extend(list(map(str, var.args)))
                             else:
                                 IntVar.append(str(elem.args[0]))
-                    if not (all (map (lambda x:str(x) in IntVar, freeVariables))):
+                    if not (all (map (lambda x:str(x) in IntVar or str(x) in vs, freeVariables))):
                         print(str(r) + " is not countable")
                         return False
                     print(str(r) + " is countable")
-                print(str(r) + " is not countable")
-                return False
+                    continue
+                else:
+                    freeVariables = list(map(str, session.evaluate(getfreeVars(conditionalExpression))))
+                    if not (all (map (lambda x: str(x) in vs, freeVariables))):
+                        print(str(r) + " is not countable")
+                        return False
+                    print(str(r) + " is countable")
+                    continue
             return True
+        return False
    # 1.empty
    # 2.conditional expression is a number
    # 3.C[n] are integers and No Global Var in Expression
    # condition can be a Element, And of List
 if __name__ == "__main__":
-    e = ("Times", "x", "x")
-    vs = [('x',[(0, "Closed", 1, "Closed"), (10, "Open", 11, "Closed")])]
+    e = ["Plus", "Times", "x", "x", "Times", "x", "y"]
+    vs = [('x',[]), ('y', [])]
     print(nnDiff(e, vs))
 

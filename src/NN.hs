@@ -44,20 +44,31 @@ import Syntax
 import Continuation
 import Log
 
-
+removeDuplicates :: Eq a => [a] -> [a]
+removeDuplicates = foldl (\seen x -> if x `elem` seen then seen
+                                      else seen ++ [x]) []
 freeVars :: Expr -> [Ident]
-freeVars (Variable x) =
+freeVars e = removeDuplicates $ freeVars' e
+
+
+freeVars' :: Expr -> [Ident]
+freeVars' (Variable x) =
   [x | x /= "true" || x /= " false"]
-freeVars (If e1 e2 e3) = freeVars e1 <> freeVars e2 <> freeVars e3
-freeVars (Apply f es) = concatMap freeVars es
-freeVars (Pair (x, y)) = freeVars x <> freeVars y
-freeVars (Loop bs1 e1 e2 bs2) =
-  concatMap freeVars es1 <> filerLocal (freeVars e1 <> freeVars e2 <> concatMap freeVars es2)
+freeVars' (If e1 e2 e3) = freeVars' e1 <> freeVars' e2 <> freeVars' e3
+freeVars' (Apply f es) = concatMap freeVars' es
+freeVars' (Pair (x, y)) = freeVars' x <> freeVars' y
+freeVars' (Loop bs1 e1 e2 bs2) =
+  concatMap freeVars' es1 <> filerLocal (freeVars' e1 <> freeVars' e2 <> concatMap freeVars' es2)
   where
     (xs1, es1) = unzip bs1
     (xs2, es2) = unzip bs2
     filerLocal = filter (`notElem` xs1)
-freeVars _ = []
+freeVars' _ = []
+
+isSingleValue :: Type -> Bool
+isSingleValue (T (C r)) = let r' = toList r in length r' == 1 && isSingleton (head r') 
+isSingleValue (P t1 t2) = isSingleValue t1 && isSingleValue t2
+
 
 functionNameMap :: [(String,Text)]
 functionNameMap =  [("sin", "Sin"), ("cos", "Cos"), ("tan", "Tan"), ("exp", "Exp"), ("log", "Log"), ("+", "Plus"),
@@ -571,10 +582,10 @@ nnDiff env e =
   if not $ diffFunction e then return Nothing
   else do
     let vars = freeVars e
-    xs <- mapM (fmap (getRange . fromJust) . nn env . Variable) vars
-    if not (all isUC xs) then return Nothing
+    xs <- mapM (imageExpr env . Variable) vars
+    if any isPair xs || any isCountType xs then return Nothing
     else
-      let xs' = map (toList.getUC) xs in
+      let xs' = map (toList.getUC.getRange) xs in
       let vs = zip (map T.pack vars) $ map (map intervalToTuple) xs' in
       do
         t <- imageExpr env e
@@ -595,22 +606,22 @@ nnDiff env e =
         let updatedPytonpath = pythonpath <> ":/usr/lib/python2.7/dist-packages:/home/dhz/.local/lib/python3.6/site-packages:/usr/local/lib/python3.6/dist-packages:/usr/lib/python3/dist-packages:./src"
         T.putStrLn ("Setting Python path to: " <> updatedPytonpath <> "\n")
         Py.setPath updatedPytonpath
-
         let nnDiff = call "nnDiff" "nnDiff"
-
         res <- nnDiff [arg e, arg vs] []
         Py.finalize
         return (res :: Bool)
 
 nnTuple :: Environment Dist -> Expr -> M (Maybe Type)
 nnTuple env p@(Pair (p1,p2)) =
-  let eList = map transfromExpPN $ flatPair p in
+  let pList = flatPair p in
+  let eList = map transfromExpPN pList in
   let vars = freeVars p in
-  let allDiff = all diffFunction (flatPair p) in
+  let allDiff = all diffFunction pList in
+  let isSquare = length vars == length pList in
   do
     xs <- mapM (fmap (getRange . fromJust) . nn env . Variable) vars
-    if not (all isUC xs) || not allDiff then 
-      log_ (show p <> " domains are not all uncount, or not differentiable") $ return Nothing
+    if not (all isUC xs) || not allDiff || not isSquare then
+      log_ (show p <> " domains are not all uncount, or not differentiable, or map to a sub space") $ return Nothing
     else
       let xs' = map (toList.getUC) xs in
       let vs = zip (map T.pack vars) $ map (map intervalToTuple) xs' in
@@ -740,13 +751,15 @@ nn env p@(Pair (x,y)) =
       xtUC <- nnUC env x
       ytUC <- nnUC env y
       let intersectVars = filter (`elem` freeVars x) (freeVars y)
-      intersT <- mapM (nn env . Variable) intersectVars
-      if all isJust [xt, yt] && (null intersectVars || all isCountType (catMaybes intersT)) && checkType (fromJust xt) (fromJust yt)
-        then log_ ("apply NN-Pair on " <> show p) $ return (Just $ P  (fromJust xt) (fromJust yt))
+      intersT' <- mapM (imageExpr env . Variable) intersectVars
+      let intersT = filter (not.isSingleValue) intersT'
+      if all isJust [xt, yt] && (null intersectVars || all isCountType intersT) && checkType (fromJust xt) (fromJust yt)
+        then log_ ("apply NN-Pair on " <> show p) $ return (Just $ P (fromJust xt) (fromJust yt))
       -- else if all isJust [xtUC, ytUC] then
       --     log_ ("apply NN-Fix on " <> show p) $ return $ Just (P (fromJust xtUC) (fromJust ytUC))
       else log_ (show p <> " is not NN-Fix or NN-Pair") $ return Nothing
     if isJust t then return t else nnTuple env p
+
 nn env e@Loop {} = log_ ("loop is not nn, " <> show e) $ return Nothing
 
 nnUC :: Environment Dist -> Expr -> M (Maybe Type)
