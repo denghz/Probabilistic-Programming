@@ -25,7 +25,6 @@ import qualified CPython.Types.Dictionary as PyDict
 import qualified CPython.Types.Exception as Py
 import qualified CPython.Types.Module as Py
 import CPython.Simple
-
 import qualified Control.Exception as E
 import           Data.Semigroup ((<>))
 import           Data.Text (Text)
@@ -34,6 +33,51 @@ import qualified Data.Text.IO as T
 import           System.Directory (getCurrentDirectory)
 import           System.FilePath ((</>))
 import           System.IO (stdout, stderr, hPutStrLn, Newline (CRLF))
+import qualified CPython.Types.Tuple as Py
+import qualified CPython.Types.Integer as Py
+import Data.Typeable
+import CPython.Simple.Instances
+
+functionNameMap :: [(String,Text)]
+functionNameMap =  [("sin", "Sin"), ("cos", "Cos"), ("tan", "Tan"), ("exp", "Exp"), ("log", "Log"), ("+", "Plus"),
+                ("-", "Subtract"), ("*", "Times"), ("~", "Minus"), ("inv", "Inv")]
+instance (ToPy a, ToPy b) => ToPy (a,b) where
+  toPy (a,b)=
+    do
+      a' <- toPy a
+      b' <- toPy b
+      t <- Py.toTuple [a',b']
+      return $ Py.toObject t
+
+instance (ToPy a, ToPy b, ToPy c) => ToPy (a,b,c) where
+  toPy (a,b,c)=
+    do
+      a' <- toPy a
+      b' <- toPy b
+      c' <- toPy c
+      t <- Py.toTuple [a',b', c']
+      return $ Py.toObject t
+
+instance (ToPy a, ToPy b, ToPy c, ToPy d) => ToPy (a,b,c,d) where
+  toPy (a,b,c,d)=
+    do
+      a' <- toPy a
+      b' <- toPy b
+      c' <- toPy c
+      d' <- toPy d
+      t <- Py.toTuple [a',b', c', d']
+      return $ Py.toObject t
+instance FromPy Bool where
+  fromPy b =
+    do
+      b' <- easyFromPy Py.fromInteger Proxy b
+      if b' == 0 then return False
+      else if b' == 1 then return True
+      else error "return value from python is not an integer"
+
+mapER :: Extended a -> Maybe a
+mapER (Finite n) = Just n
+mapER _ = Nothing
 
 type Ans = IO Env
 newtype M a = Mk ((a -> Ans) -> Ans)
@@ -43,6 +87,12 @@ data Range =
   deriving (Eq, Show)
   -- either count or uncount or both are possible
   -- Boundary of C set is in the set
+isUC :: Range -> Bool
+isUC (UC _ ) = True
+isUC _ = False
+
+getUC :: Range -> IntervalSet Double
+getUC (UC r) = r
 
 rangeBtoUC :: Range -> Range
 rangeBtoUC (B r1 r2) = UC r2
@@ -485,8 +535,6 @@ imageFunc id args
     trueRange = singleton (Finite 1 <=..<= Finite 1)
     -- case not handled (negInf, 0) Intersection Z < ((negInf, 0) Intersection Z) union [1,2] should be true
 
-
-
     less (r1, True) (r2, True) =lessCC r1 r2
     less r1 r2 = lessUCC r1 r2
 
@@ -582,7 +630,7 @@ imageFunc id args
           expER PosInf = PosInf
           expER NegInf = Finite 0
     logRange x
-      = if (lb < Finite 0) || (lb == Finite 0 && lbt == Closed) then
+      = if lb < Finite 0 || lb == Finite 0 && lbt == Closed then
             error "log x is undefined when x <= 0"
         else
             interval (logER lb, lbt) (logER ub, ubt)
@@ -615,8 +663,6 @@ imageFunc id args
           where
             (lb, lbt) = lowerBound' x
             (ub, ubt) = upperBound' x
-            mapER (Finite n) = Just n
-            mapER _ = Nothing
             getLb Nothing = (NegInf, Open)
             getLb (Just (lb, lbt)) = (Finite lb, read $ T.unpack lbt)
             getUb Nothing = (PosInf, Open)
@@ -658,7 +704,7 @@ imagePrim "Uniform" rs
   where
       ifIntersect r1 r2
         = not (checkSingOrNull $ lift2BothtoC Intervals.intersection r1 r2)
-      checkSingOrNull (C r) = let rs = toList r in (length rs == 1 && isSingleton (head rs)) || Intervals.null r
+      checkSingOrNull (C r) = let rs = toList r in length rs == 1 && isSingleton (head rs) || Intervals.null r
       x = getRange $ head rs
       y = getRange $ last rs
 
@@ -704,6 +750,57 @@ range env (Apply (Variable n) es) =
 
 range env (Variable x) = let d = find env x in imageDist env d
 range env Loop {} = return $ T (UC Intervals.whole) --unable to calculate, for safety, return the upperbound
+
+diffFunction :: Expr -> Bool
+diffFunction (Number _) = True
+diffFunction (Variable _) = True
+diffFunction (Apply (Variable id) es)
+  | id `elem` ["+", "-", "*", "~", "inv", "sin", "cos", "tan", "exp", "log"] =
+    all diffFunction es
+  | otherwise = False
+diffFunction _ = False
+
+nnDiff :: Environment Dist -> Expr -> M Bool
+nnDiff env e =
+  if not $ diffFunction e then pure False
+  else do
+    let vars = freeVars e
+    xs <- mapM (fmap (getRange . fromJust) . nn env . Variable) vars
+    if not (all isUC xs) then return False
+    else 
+      let xs' = map (toList.getUC) xs in
+      let vs = zip (map T.pack vars) $ map (map intervalToTuple) xs' in 
+      Mk (\k -> 
+        do
+          b <- diffCheck (transfromExpPN e) vs
+          k b)
+  where
+    intervalToTuple interval =
+      (mapER lb, T.pack (show lbt), mapER ub, T.pack (show ubt))
+      where
+        (lb, lbt) = lowerBound' interval
+        (ub, ubt) = upperBound' interval
+    justLookupFunctionName id = fromJust $ lookup id functionNameMap
+    transfromExpPN (Apply (Variable id) es) =
+      justLookupFunctionName id:concatMap transfromExpPN es
+    transfromExpPN (Number n) = [T.pack $ show n]
+    transfromExpPN (Variable id) = [T.pack id]
+    diffCheck e vs = 
+      do 
+        Py.initialize
+        pythonpath <- Py.getPath
+        T.putStrLn ("Python path at startup is: " <> pythonpath <> "\n")
+        -- Appending so that the user's PYTHONPATH variable (ready by python) can go first.
+        let updatedPytonpath = pythonpath <> ":/usr/lib/python2.7/dist-packages:/home/dhz/.local/lib/python3.6/site-packages:/usr/local/lib/python3.6/dist-packages:/usr/lib/python3/dist-packages:./src"
+        T.putStrLn ("Setting Python path to: " <> updatedPytonpath <> "\n")
+        Py.setPath updatedPytonpath
+
+        let nnDiff = call "nnDiff" "nnDiff"
+
+        res <- nnDiff [arg e, arg vs] []
+        Py.finalize
+        return (res :: Bool)
+
 
 -- Nothing means not NN, can result in the type of high demension, everything demensition can be only Count or only UnCount, or both Count and UCount
 nn :: Environment Dist -> Expr -> M (Maybe Type)
@@ -789,7 +886,7 @@ nn env (Pair (x,y)) =
           do
             xt' <- xt
             yt' <- yt
-            if (null intersectVars || all isCountType (catMaybes intersT)) && checkType xt' yt' 
+            if (null intersectVars || all isCountType (catMaybes intersT)) && checkType xt' yt'
               then return $ P xt' yt'
             else if all isJust [xtUC, ytUC] then
               return $ P (fromJust xtUC) (fromJust ytUC)
