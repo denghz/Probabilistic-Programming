@@ -672,25 +672,22 @@ nn env e@(Apply (Variable "+") xs) =
   if length xs /= 2 then error "+ takes two arguments"
     else
   do
-    t <- nnDiff env e
-    if isJust t then log_ ("apply NN-DIFF on " <> show e) $ return t
-    else do
-      ts <- nn env (Pair (head xs, last xs))
-      let ts' = do
-            t <- ts
-            let t1 = fstType t
-            let t2 = sndType t
-            return [t1, t2]
-      let l = if isJust ts' then "apply NN-PLUS on " <> show e else show e <> " is not nn"
-      log_ l $ mapM (imageFunc "+") ts'
+    t <- (do
+        ts <- nn env (Pair (head xs, last xs))
+        let ts' = do
+              t <- ts
+              let t1 = fstType t
+              let t2 = sndType t
+              return [t1, t2]
+        mapM (imageFunc "+") ts')
+    if isJust t then log_ ("apply NN-PLUS on " <> show e) $ return t
+    else nnDiff env e
 
 nn env e@(Apply (Variable "*") xs) =
   if length xs /= 2 then error "* takes two arguments"
     else
   do
-    t <- nnDiff env e
-    if isJust t then log_ ("apply NN-DIFF on " <> show e) $ return t
-    else do
+    t <- do
       ts <- nn env (Pair (head xs, last xs))
       t1 <- nn env (head xs)
       t2 <- nn env (last xs)
@@ -708,10 +705,13 @@ nn env e@(Apply (Variable "*") xs) =
                 if not (memberType 0 t1' && memberType 0 t2')
                   then return [t1', t2']
                 else Nothing
-      let l | isJust ts = "apply NN-MULT on " <> show e
-            | isJust ts' = "apply NN-SCALE on " <> show e
-            | otherwise = show e <> " is not nn"
+      let l | isJust ts = "apply NN-Mult on " <> show e
+            | isJust ts' = "apply NN-Scale on " <> show e
+            | otherwise = show e <> " is not NN-Mult and NN-Scale"
       log_ l $ mapM (imageFunc "*") ts'
+
+    if isJust t then log_ ("apply NN-DIFF on " <> show e) $ return t
+    else nnDiff env e
   where
     memberType n t =
       let t' = getRange t in
@@ -722,20 +722,18 @@ nn env e@(Apply (Variable id) xs)
     if length xs /= 1 then error $ id <> " takes two arguments"
     else
       do
-        t <- nnDiff env e
-        if isJust t then log_ ("apply NN-DIFF on " <> show e) $ return t
-        else do
+        t <- do
           t <- nn env (head xs)
           let t' = fmap (:[]) t
-          let l = if isJust t' then "apply NN-OP or NN-PROJ on " <> show e else show e <> " is not nn"
-          log_ l $ mapM (imageFunc id) t'
+          mapM (imageFunc id) t'
+        if isJust t then log_ ("apply NN-OP or NN-PROJ on " <> show e) $ return t
+        else nnDiff env e
   | otherwise = error $ id <> " not implemeneted"
 
 nn env p@(Pair (x,y)) =
   do
-    t <- nnTuple env p
-    if isJust t then log_ ("apply NN-Tuple on " <> show p) $ return t
-    else do
+
+    t <- do
       xt <- nn env x
       yt <- nn env y
       xtUC <- nnUC env x
@@ -746,7 +744,9 @@ nn env p@(Pair (x,y)) =
         then log_ ("apply NN-Pair on " <> show p) $ return (Just $ P  (fromJust xt) (fromJust yt))
       else if all isJust [xtUC, ytUC] then
           log_ ("apply NN-Fix on " <> show p) $ return $ Just (P (fromJust xtUC) (fromJust ytUC))
-      else log_ (show p <> " is not nn") $ return Nothing
+      else log_ (show p <> " is not NN-Fix or NN-Pair") $ return Nothing
+    if isJust t then log_ ("apply NN-Tuple on " <> show p) $ return t
+    else nnTuple env p
 
 
 nn env e@Loop {} = log_ ("loop is not nn, " <> show e) $ return Nothing
@@ -776,27 +776,24 @@ nnUC env e@(Apply (Variable "+") xs) =
   if length xs /= 2 then error "+ takes two arguments"
     else
   do
-    t <- nnDiff env e
-    if isJust t then log_ ("apply NN-DIFF UC on " <> show e) $ return t
-    else do
+    t <- do
       ts <- nnUC env (Pair (head xs, last xs))
       let ts' = do
             t <- ts
             let t1 = fstType t
             let t2 = sndType t
             return [t1, t2]
-      let l = if isJust ts' then "apply NN-PLUS UC on " <> show e else show e <> " is not nn"
-      log_ l $ mapM (imageFunc "+") ts'
+      mapM (imageFunc "+") ts'
+    if isJust t then log_ ("apply NN-PLUS UC on " <> show e) $ return t
+    else nnDiff env e
 
 --NN Multi UC just works if not both are Count by NN Scale and ignore Countable
 nnUC env e@(Apply (Variable "*") xs) =
   if length xs /= 2 then error "* takes two arguments"
     else
   do
-    t <- nnDiff env e
     ts <- mapM (imageExpr env) xs
-    if isJust t then log_ ("apply NN-DIFF UC on " <> show e) $ return t
-    else if all isCountType ts then nn env e
+    if all isCountType ts then nn env e
     else do
       t1 <- nnUC env (head xs)
       t2 <- nnUC env (last xs)
@@ -810,13 +807,12 @@ nnUC env e@(Apply (Variable id) xs)
     if length xs /= 1 then error $ id <> " takes two arguments"
     else
       do
-        t <- nnDiff env e
-        if isJust t then log_ ("apply NN-DIFF UC on " <> show e) $ return t
-        else do
+        t <- do
           t <- nnUC env (head xs)
           let t' = fmap (:[]) t
-          let l = if isJust t' then "apply NN-OP UC or NN-PROJ UC on " <> show e else show e <> " is not nn"
-          log_ l $ mapM (imageFunc id) t'
+          mapM (imageFunc id) t'
+        if isJust t then log_ ("apply NN-OP UC or NN-PROJ UC on " <> show e) $ return t
+        else nnDiff env e
   | otherwise = error $ id <> " not implemeneted"
 
 nnUC env (Pair (x,y)) = nn env (Pair (x,y))
