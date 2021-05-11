@@ -730,6 +730,16 @@ imagePrim "WRoll" rs =
   let unionRange = lift2CCtoC Intervals.union in
   let res = foldr1 unionRange xs in return (T res)
 
+
+imageExpr :: Environment Dist -> Expr -> M Type
+imageExpr env (Apply (Variable id) es) = 
+  do
+    ts <- mapM (imageExpr env) es
+    imageFunc id ts
+imageExpr env (Variable x) = imageDist env (find env x)
+imageExpr env (Number n) = return (T (C (singleton $ Finite n <=..<= Finite n)))
+
+
 range :: Environment Dist -> Expr -> M Type
 range env (Pair p) =
   do
@@ -760,20 +770,24 @@ diffFunction (Apply (Variable id) es)
   | otherwise = False
 diffFunction _ = False
 
-nnDiff :: Environment Dist -> Expr -> M Bool
+nnDiff :: Environment Dist -> Expr -> M (Maybe Type)
 nnDiff env e =
-  if not $ diffFunction e then pure False
+  if not $ diffFunction e then return Nothing
   else do
     let vars = freeVars e
     xs <- mapM (fmap (getRange . fromJust) . nn env . Variable) vars
-    if not (all isUC xs) then return False
+    if not (all isUC xs) then return Nothing
     else 
       let xs' = map (toList.getUC) xs in
       let vs = zip (map T.pack vars) $ map (map intervalToTuple) xs' in 
-      Mk (\k -> 
-        do
-          b <- diffCheck (transfromExpPN e) vs
-          k b)
+      do
+        t <- imageExpr env e
+        Mk (\k -> 
+          do
+            b <- diffCheck (transfromExpPN e) vs
+            if b then k (Just t)
+            else k Nothing
+          )
   where
     intervalToTuple interval =
       (mapER lb, T.pack (show lbt), mapER ub, T.pack (show ubt))
@@ -825,10 +839,13 @@ nn env (If e1 e2 e3) =
            if checkType t1 t2 then return (unionType t1 t2) else Nothing
       return res
 
-nn env (Apply (Variable "+") xs) =
+nn env e@(Apply (Variable "+") xs) =
   if length xs /= 2 then error "+ takes two arguments"
     else
   do
+    t <- nnDiff env e
+    if isJust t then return t
+    else do
       ts <- nn env (Pair (head xs, last xs))
       let ts' = do
             t <- ts
@@ -837,41 +854,47 @@ nn env (Apply (Variable "+") xs) =
             return [t1, t2]
       mapM (imageFunc "+") ts'
 
-nn env (Apply (Variable "*") xs) =
+nn env e@(Apply (Variable "*") xs) =
   if length xs /= 2 then error "* takes two arguments"
     else
   do
-    ts <- nn env (Pair (head xs, last xs))
-    t1 <- nn env (head xs)
-    t2 <- nn env (last xs)
-    let ts' =
-          if isJust ts then
-            do
-              t <- ts
-              let t1 = fstType t
-              let t2 = sndType t
-              return [t1, t2]
-          else
-            do
-              t1' <- t1
-              t2' <- t2
-              if not (memberType 0 t1' && memberType 0 t2')
-                then return [t1', t2']
-              else Nothing
-    mapM (imageFunc "*") ts'
+    t <- nnDiff env e
+    if isJust t then return t
+    else do
+      ts <- nn env (Pair (head xs, last xs))
+      t1 <- nn env (head xs)
+      t2 <- nn env (last xs)
+      let ts' =
+            if isJust ts then
+              do
+                t <- ts
+                let t1 = fstType t
+                let t2 = sndType t
+                return [t1, t2]
+            else
+              do
+                t1' <- t1
+                t2' <- t2
+                if not (memberType 0 t1' && memberType 0 t2')
+                  then return [t1', t2']
+                else Nothing
+      mapM (imageFunc "*") ts'
   where
     memberType n t =
       let t' = getRange t in
        all (Intervals.member n . fst) (rangeToList t')
 
-nn env (Apply (Variable id) xs)
+nn env e@(Apply (Variable id) xs)
   | id `elem` ["~", "inv", "log", "exp", "sin", "cos", "tan", "fst", "snd"] =
     if length xs /= 1 then error $ id <> " takes two arguments"
     else
       do
-        t <- nn env (head xs)
-        let t' = fmap (:[]) t
-        mapM (imageFunc id) t'
+        t <- nnDiff env e
+        if isJust t then return t
+        else do
+          t <- nn env (head xs)
+          let t' = fmap (:[]) t
+          mapM (imageFunc id) t'
   | otherwise = error $ id <> " not implemeneted"
 
 nn env (Pair (x,y)) =
@@ -917,10 +940,13 @@ nnUC env (If e1 e2 e3) =
            if checkType t1' t2' then return (unionType t1' t2') else Nothing
       return res
 
-nnUC env (Apply (Variable "+") xs) =
+nnUC env e@(Apply (Variable "+") xs) =
   if length xs /= 2 then error "+ takes two arguments"
     else
   do
+    t <- nnDiff env e
+    if isJust t then return t
+    else do
       ts <- nnUC env (Pair (head xs, last xs))
       let ts' = do
             t <- ts
@@ -929,25 +955,31 @@ nnUC env (Apply (Variable "+") xs) =
             return [t1, t2]
       mapM (imageFunc "+") ts'
 
-nnUC env (Apply (Variable "*") xs) =
+nnUC env e@(Apply (Variable "*") xs) =
   if length xs /= 2 then error "* takes two arguments"
     else
   do
-    t1 <- nnUC env (head xs)
-    t2 <- nnUC env (last xs)
-    let ts = catMaybes [t1, t2]
-    t <- imageFunc "*" ts
-    return (Just t)
+    t <- nnDiff env e
+    if isJust t then return t
+    else do
+      t1 <- nnUC env (head xs)
+      t2 <- nnUC env (last xs)
+      let ts = catMaybes [t1, t2]
+      t <- imageFunc "*" ts
+      return (Just t)
 
 
-nnUC env (Apply (Variable id) xs)
+nnUC env e@(Apply (Variable id) xs)
   | id `elem` ["~", "inv", "log", "exp", "sin", "cos", "tan", "fst", "snd"] =
     if length xs /= 1 then error $ id <> " takes two arguments"
     else
       do
-        t <- nnUC env (head xs)
-        let t' = fmap (:[]) t
-        mapM (imageFunc id) t'
+        t <- nnDiff env e
+        if isJust t then return t
+        else do
+          t <- nnUC env (head xs)
+          let t' = fmap (:[]) t
+          mapM (imageFunc id) t'
   | otherwise = error $ id <> " not implemeneted"
 
 nnUC env (Pair (x,y)) = nn env (Pair (x,y))
