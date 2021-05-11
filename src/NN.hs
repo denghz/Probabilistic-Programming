@@ -245,7 +245,7 @@ imageFunc id args
       if length args /= 2 then  error $ "only 2 arguement allowed for " <> id
       else if id `elem` ["+", "-", "*"] then return (T (lift2CCtoC (binop id) rx ry))
       else return (T $ C (unions [comp id x y | x <- rangeToList rx, y <- rangeToList ry ])) -- id `elem` ["<", "<=", ">", ">=", "=", "<>"]
-  | id `elem` ["~", "inv", "fst", "snd", "floor", "sin", "cos", "tan", "exp"] =
+  | id `elem` ["~", "inv", "fst", "snd", "floor", "sin", "cos", "tan", "exp", "log"] =
       let x = head args in
       if length args /= 1 then error $ "only 1 arguement allowed for " <> id
       else
@@ -411,7 +411,7 @@ imageFunc id args
         x' = IntInterval.fromIntervalUnder x
         lb = IntInterval.lowerBound x' +
             let (lb', lbt') = lowerBound' x in
-              if checkInt lb' && lbt' == Closed then (-1) else 0
+              if checkInt lb' && lbt' == Open then (-1) else 0
         ub = IntInterval.upperBound x'
         fromFinite (Finite n) = n
         checkInt (Finite n) = isInt 10 n
@@ -487,11 +487,11 @@ imagePrim "Uniform" rs
   | ifIntersect x y = error "arguments of uniform distribution cannot overlap"
   | otherwise =
       let cr  = do
-                rx <- getC x
-                ry <- getC y
-                let is = intersections [rx,ry]
-                if not $ Intervals.null is then return (C is)
-                else Nothing
+                  rx <- getC x
+                  ry <- getC y
+                  let is = intersections [rx,ry]
+                  if not $ Intervals.null is then return (C is)
+                  else Nothing
       in let uc = lift2BothtoUC (\x y -> singleton (Intervals.span (x `union` y))) x y in
         case cr of
           Just c -> return $ T (combineCUC c uc)
@@ -743,12 +743,10 @@ nn env p@(Pair (x,y)) =
       intersT <- mapM (nn env . Variable) intersectVars
       if all isJust [xt, yt] && (null intersectVars || all isCountType (catMaybes intersT)) && checkType (fromJust xt) (fromJust yt)
         then log_ ("apply NN-Pair on " <> show p) $ return (Just $ P  (fromJust xt) (fromJust yt))
-      else if all isJust [xtUC, ytUC] then
-          log_ ("apply NN-Fix on " <> show p) $ return $ Just (P (fromJust xtUC) (fromJust ytUC))
+      -- else if all isJust [xtUC, ytUC] then
+      --     log_ ("apply NN-Fix on " <> show p) $ return $ Just (P (fromJust xtUC) (fromJust ytUC))
       else log_ (show p <> " is not NN-Fix or NN-Pair") $ return Nothing
     if isJust t then return t else nnTuple env p
-
-
 nn env e@Loop {} = log_ ("loop is not nn, " <> show e) $ return Nothing
 
 nnUC :: Environment Dist -> Expr -> M (Maybe Type)

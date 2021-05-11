@@ -24,8 +24,6 @@ class Func:
             return self.name
         return self.name + "[" + str(self.arg1) + (", " + (str(self.arg2)) if self.arg2 is not None else "") + "]" 
 
-
-
 def nnTuple(e,vs):
     with WolframLanguageSession() as session:
         session.evaluate("Inv[zzz_] := 1/zzz")
@@ -47,13 +45,12 @@ def nnTuple(e,vs):
         wlvs = list(map(wlexpr,variables))
         fs = list(map(lambda x:wlexpr(str(Func(x))), e))
         print("nnTuple exprs " + str(fs))
-        var = [wl.x, wl.y]
         session.evaluate("JDotTransJ[x1_, var_] := Block[{M = ResourceFunction[\"JacobianMatrix\"][x1, var]},Det[M . Transpose[M]]]")
         session.evaluate("Jaco[x1_, var_] := ResourceFunction[\"JacobianMatrix\"][x1, var]")
-        jDotTransJ = session.evaluate(wl.Global.JDotTransJ(fs, var))
+        jDotTransJ = session.evaluate(wl.Global.JDotTransJ(fs, wlvs))
         print("nnTuple Det(A*A^T) " + str(jDotTransJ))
-        jacobian = session.evaluate(wl.Global.Jaco(fs,var))
-        print("nnTuple Jacobian(A*A^T) " + str(jacobian))
+        jacobian = session.evaluate(wl.Global.Jaco(fs,wlvs))
+        print("nnTuple Jacobian " + str(jacobian))
         jacobianList = [element for tupl in jacobian for element in tupl]
         isContinuous = session.function("FunctionContinuous")
         isDeriCont = all(list(map(lambda x:isContinuous([x] + conds,wlvs), jacobianList)))
@@ -70,7 +67,9 @@ def nnTuple(e,vs):
         
         return True
 
+        # Y depends on X
+        
 if __name__ == "__main__":
-    e = [["Plus", "Times", "x", "x", "y"], ["Subtract", "x", "y"]]
-    vs = [('x',[(0, "Closed", 1, "Closed"), (10, "Open", 11, "Closed")])]
+    e = [["Exp", "Log", "x"], ["Minus", "x"]]
+    vs = [('x',[])]
     print(nnTuple(e,vs))

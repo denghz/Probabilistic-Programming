@@ -84,7 +84,7 @@ def countableManySolution(f):
                 conditionalExpression = r.args[1]
                  #r[0] is variable, r[1] is conditional expression
                 if (isinstance(conditionalExpression, numbers.Number)):
-                    print(str(r) + " is a singleton integer, than countable")
+                    print(str(r) + " is a singleton integer, then countable")
                     return True
                 elif conditionalExpression.head == "ConditionalExpression":
                     condition = conditionalExpression.args[1]
@@ -119,3 +119,4 @@ if __name__ == "__main__":
     e = ("Times", "x", "x")
     vs = [('x',[(0, "Closed", 1, "Closed"), (10, "Open", 11, "Closed")])]
     print(nnDiff(e, vs))
+
