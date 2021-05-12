@@ -1,2 +1,15 @@
 2021-05-12 06:11:43.791017900000 [3685(ThreadId 29)] ERROR APP - user error (<getModule> loaded module can not find from path. </home/dhz/probprog/src/nnDiff.py> [("Spec","/home/dhz/probprog/test/Spec.hs")])
 2021-05-12 06:11:43.844124200000 [3685(ThreadId 29)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2021-05-12 10:00:53.895998900000 [9041(ThreadId 29)] ERROR APP - user error (<getModule> loaded module can not find from path. </home/dhz/probprog/src/NN.hs> [("Spec","/home/dhz/probprog/test/Spec.hs")])
+2021-05-12 10:00:53.944582600000 [9041(ThreadId 29)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2021-05-12 10:00:58.071142900000 [9187(ThreadId 29)] ERROR APP - user error (<getModule> loaded module can not find from path. </home/dhz/probprog/src/NN.hs> [("Spec","/home/dhz/probprog/test/Spec.hs")])
+2021-05-12 10:00:58.118322000000 [9187(ThreadId 29)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2021-05-12 10:01:12.481771900000 [9333(ThreadId 29)] ERROR APP - user error (<getModule> loaded module can not find from path. </home/dhz/probprog/src/NN.hs> [("Spec","/home/dhz/probprog/test/Spec.hs")])
+2021-05-12 10:01:12.529828800000 [9333(ThreadId 29)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2021-05-12 10:01:18.606619600000 [9478(ThreadId 29)] ERROR APP - user error (<getModule> loaded module can not find from path. </home/dhz/probprog/src/NN.hs> [("Spec","/home/dhz/probprog/test/Spec.hs")])
+2021-05-12 10:01:18.654689300000 [9478(ThreadId 29)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2021-05-12 10:02:18.285717100000 [9639(ThreadId 29)] ERROR APP - user error (<getModule> loaded module can not find from path. </home/dhz/probprog/src/NN.hs> [("Spec","/home/dhz/probprog/test/Spec.hs")])
+2021-05-12 10:02:18.337033900000 [9639(ThreadId 29)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2021-05-12 10:02:20.199923000000 [9783(ThreadId 29)] ERROR APP - cabal: runProcess: runInteractiveProcess: exec: does not exist (No such file or directory)
+2021-05-12 10:02:44.301661900000 [9857(ThreadId 29)] ERROR APP - cabal: runProcess: runInteractiveProcess: exec: does not exist (No such file or directory)
+2021-05-12 10:02:50.300584800000 [9928(ThreadId 29)] ERROR APP - cabal: runProcess: runInteractiveProcess: exec: does not exist (No such file or directory)

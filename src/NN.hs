@@ -205,6 +205,7 @@ checkType (T r1) (T r2) = checkRange r1 r2
     checkRange (C _) (C _) = True
     checkRange (UC _) (UC _) = True
     checkRange _ _ = False
+checkType _ _ = False
 
 mapType :: (Range -> Range) -> Type -> Type
 mapType f (T r) = T (f r)
@@ -264,11 +265,14 @@ imageFunc :: Environment Dist -> Ident -> [Expr] -> M Type
 imageFunc env id es =
   do
     ts <- mapM (range env) es
-    let xr = head ts
-    yr <- range env (Apply (Variable "~") [y])
-    diffr <- mapM (range env . Variable) diff
-    let nodiff = all isSingleValue diffr
-    if id == "+" && xr == yr && nodiff then return (T (C (singleton (Finite 0 <=..<= Finite 0))))
+    if id == "+" then
+        do
+          let xr = head ts
+          yr <- range env (Apply (Variable "~") [y])
+          diffr <- mapM (range env . Variable) diff
+          let nodiff = all isSingleValue diffr
+          if xr == yr && nodiff then return (T (C (singleton (Finite 0 <=..<= Finite 0))))
+          else imageFunc' id ts
     else imageFunc' id ts
   where
     x = head es
@@ -662,7 +666,7 @@ nnTuple env p@(Pair (p1,p2)) =
   do
     xs <- mapM (fmap (getRange . fromJust) . nn env . Variable) vars
     if not (all isUC xs) || not allDiff || not isSquare then
-      log_ (show p <> " domains are not all uncount, or not differentiable, or map to a sub space") $ return Nothing
+      log_ ("try NN-Tuple " <> show p <> " domains are not all uncount, or not differentiable, or map to a sub space") $ return Nothing
     else
       let xs' = map (toList.getUC) xs in
       let vs = zip (map T.pack vars) $ map (map intervalToTuple) xs' in
@@ -782,23 +786,25 @@ nn env e@(Apply (Variable id) xs)
 
 nn env p@(Pair (x,y)) =
   do
-    t <- do
-      xt <- nn env x
-      yt <- nn env y
-      let intersectVars = filter (`elem` freeVars x) (freeVars y)
-      intersT' <- mapM (range env . Variable) intersectVars
-      let intersT = filter (not.isSingleValue) intersT'
-      if all isJust [xt, yt] && (null intersT || all isCountType intersT) && checkType (fromJust xt) (fromJust yt)
-        then log_ ("apply NN-Pair on " <> show p) $ return (Just $ P (fromJust xt) (fromJust yt))
-      else
-        do
-          let varsV = map (find env) intersectVars
-          let newEnv = defargs env intersectVars (map Const intersT')
-          xt <- nn newEnv x
-          yt <- nn newEnv y
-          if all isJust [xt, yt] && checkType (fromJust xt) (fromJust yt) then
-            log_ ("apply NN-Fix on " <> show p) $ return (Just $ P (fromJust xt) (fromJust yt))
-          else log_ (show p <> " is not NN-Fix or NN-Pair") $ return Nothing
-    if isJust t then return t else log_ ("try to appy NN-Tuple on " <> show p) $ nnTuple env p
+    xt <- nn env x
+    yt <- nn env y
+    let intersectVars = filter (`elem` freeVars x) (freeVars y)
+    intersT' <- mapM (range env . Variable) intersectVars
+    let intersT = filter (not.isSingleValue) intersT'
+    if all isJust [xt, yt] && (null intersT || all isCountType intersT) && checkType (fromJust xt) (fromJust yt)
+      then log_ ("apply NN-Pair on " <> show p) $ return (Just $ P (fromJust xt) (fromJust yt))
+    else
+      do
+        t <- nnTuple env p
+        if isJust t then return t
+        else do
+                let varsV = map (find env) intersectVars
+                let newEnv = defargs env intersectVars (map Const intersT')
+                xt <- nn newEnv x
+                yt <- nn newEnv y
+                if all isJust [xt, yt] && checkType (fromJust xt) (fromJust yt) then
+                  log_ ("apply NN-Fix on " <> show p) $ return (Just $ P (fromJust xt) (fromJust yt))
+                else log_ (show p <> " is not nn") $ return Nothing
+    
 
 nn env e@Loop {} = log_ ("loop is not nn, " <> show e) $ return Nothing
