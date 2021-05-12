@@ -5,7 +5,8 @@ from wolframclient.serializers import export, wolfram_encoder
 import wolframclient
 import numbers
 from nnDiff import countableManySolution
-
+import sys
+import itertools
 functions1 = ("Sin", "Cos", "Tan", "Exp", "Log", "Minus", "Inv")
 functions2 = ("Plus", "Subtract", "Times")
 class Func:
@@ -27,10 +28,11 @@ class Func:
 def nnTuple(e,vs):
     with WolframLanguageSession() as session:
         session.evaluate("Inv[zzz_] := 1/zzz")
-        varsAndRanges = list(zip(*vs))
-        variables = varsAndRanges[0]
+        variables = list(map(lambda x:x[0], vs))
+        ranges = list(map(lambda x:x[1:], vs))
+   
         print("nnTuple variable " + str(variables))
-        ranges = varsAndRanges[1]
+        
         print("nnTuple ranges " + str(ranges))
         def rangeToWlexpr(var, lb, lbt, ub, ubt):
             lbt = '<' if lbt == 'Open' else '<='
@@ -70,6 +72,14 @@ def nnTuple(e,vs):
         # Y depends on X
         
 if __name__ == "__main__":
-    e = [["Plus", "x", "y"], ["Plus", "x", "Minus", "y"]]
-    vs = [('x',[]), ('y', [])]
-    print(nnTuple(e,vs))
+    spl = lambda lst, delim: [list(y) for x, y in itertools.groupby(lst, lambda z: z == delim) if not x]
+    args = sys.argv[1:]
+    res = spl(args, "||")
+    print(res)
+    exp = res[0]
+    exp = spl (exp, "##")
+    vs = res[1]
+    vs = spl(vs, "##")
+    # e = [["Plus", "x", "y"], ["Plus", "x", "Minus", "y"]]
+    # vs = [('x',[]), ('y', [])]
+    print(nnTuple(exp,vs), file=sys.stderr)

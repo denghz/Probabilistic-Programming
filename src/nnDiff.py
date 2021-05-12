@@ -1,9 +1,11 @@
+import sys
 from wolframclient.evaluation import WolframLanguageSession
 from wolframclient.language import wl, wlexpr
 from wolframclient.deserializers import WXFConsumer, binary_deserialize
 from wolframclient.serializers import export, wolfram_encoder
 import wolframclient
 import numbers
+import itertools
 
 functions1 = ("Sin", "Cos", "Tan", "Exp", "Log", "Minus", "Inv")
 functions2 = ("Plus", "Subtract", "Times")
@@ -24,7 +26,7 @@ class Func:
         return self.name + "[" + str(self.arg1) + (", " + (str(self.arg2)) if self.arg2 is not None else "") + "]" 
 
 
-falseEmp = wlexpr("Sin[x] + Cos[y] == 0")
+#falseEmp = wlexpr("Sin[x] + Cos[y] == 0")
 # trueEmp = wlexpr("Solve[Sin[x] + Cos[y] + 2== 0, {x,y}, Reals]")
 # e = wlexpr("Solve[x+0.5 == 0, x, Reals]")
 # e2 = wlexpr("Solve[And[x^2 - 2 y^2 == 1,x > 0,y > 0] , {x, y}, Integers]")
@@ -33,10 +35,9 @@ falseEmp = wlexpr("Sin[x] + Cos[y] == 0")
 
 
 def nnDiff(e, vs):
-    varsAndRanges = list(zip(*vs))
-    variables = varsAndRanges[0]
+    variables = list(map(lambda x:x[0], vs))
     print("variable " + str(variables))
-    ranges = varsAndRanges[1]
+    ranges = list(map(lambda x:x[1:], vs))
     print("ranges " + str(ranges))
     def rangeToWlexpr(var, lb, lbt, ub, ubt):
         lbt = '<' if lbt == 'Open' else '<='
@@ -125,7 +126,14 @@ def countableManySolution(f, vs):
    # 3.C[n] are integers and No Global Var in Expression
    # condition can be a Element, And of List
 if __name__ == "__main__":
-    e = ["Plus", "Times", "x", "x", "Times", "x", "y"]
-    vs = [('x',[]), ('y', [])]
-    print(nnDiff(e, vs))
+    spl = lambda lst, delim: [list(y) for x, y in itertools.groupby(lst, lambda z: z == delim) if not x]
+    args = sys.argv[1:]
+    res = spl(args, "||")
+    print(res)
+    exp = res[0]
+    vs = res[1]
+    vs = spl(vs, "##")
+    # e = ["Plus", "Times", "x", "x", "Times", "x", "y"]
+    # vs = [('x',[]), ('y', [])]
+    print(nnDiff(exp, vs), file =sys.stderr)
 

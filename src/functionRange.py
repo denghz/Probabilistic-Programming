@@ -1,8 +1,12 @@
+from logging import error
 from wolframclient.evaluation import WolframLanguageSession
 from wolframclient.language import wl, wlexpr
 from wolframclient.deserializers import WXFConsumer, binary_deserialize
 from wolframclient.serializers import export, wolfram_encoder
 import wolframclient
+import sys
+
+
 
 class InEqConsumer(WXFConsumer):
     ineq = wl.Inequality
@@ -81,4 +85,16 @@ def calRange(f, lb, lbt, ub, ubt):
         return res
 
 if __name__ == "__main__":
-    print(calRange("Sin", 0, "Closed", 0, "Closed"))
+    args = sys.argv[1:]
+    if len(args) != 5:
+        print("wrong number of args")
+    else:
+        f = args[0]
+        lb = None if args[1] == "Nothing" else float(args[1]) 
+        lbt = args[2]
+        ub =  None if args[3] == "Nothing" else float(args[3]) 
+        ubt = args[4]
+        for e in calRange(f, lb, lbt, ub,ubt):
+            print(e[0], file=sys.stderr)
+            print(e[1], file=sys.stderr)
+    # print(calRange("Sin", 0, "Closed", 0, "Closed"))
