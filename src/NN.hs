@@ -16,7 +16,8 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import           System.Directory (getCurrentDirectory)
 import           System.FilePath ((</>))
-import           System.IO (stdout, stderr, hPutStrLn, Newline (CRLF))
+import System.IO
+    ( stdout, stderr, hPutStrLn, Newline(CRLF), hPutStr, hClose )
 import qualified CPython.Types.Tuple as Py
 import qualified CPython.Types.Integer as Py
 import Data.Typeable
@@ -44,7 +45,12 @@ import Data.Maybe(isJust, fromJust, catMaybes)
 import Syntax
 import Continuation
 import Log
-
+import System.Process.Typed
+import qualified Data.ByteString.Lazy as L
+import qualified Data.ByteString.Lazy.Char8 as L8
+import Control.Concurrent.STM (atomically)
+import Control.Exception (throwIO)
+import qualified Data.List as List
 
 unCountConst :: Environment Dist -> Expr -> Bool
 unCountConst env (Variable e) =
@@ -83,7 +89,7 @@ isSingleValue (T (C r)) = let r' = toList r in length r' == 1 && isSingleton (he
 isSingleValue (P t1 t2) = isSingleValue t1 && isSingleValue t2
 isSingleValue _ = False
 
-functionNameMap :: [(String,Text)]
+functionNameMap :: [(String,String)]
 functionNameMap =  [("sin", "Sin"), ("cos", "Cos"), ("tan", "Tan"), ("exp", "Exp"), ("log", "Log"), ("+", "Plus"),
                 ("-", "Subtract"), ("*", "Times"), ("~", "Minus"), ("inv", "Inv")]
 --Returns if x is an int to n decimal places
@@ -251,14 +257,14 @@ intervalToTuple interval =
         (lb, lbt) = lowerBound' interval
         (ub, ubt) = upperBound' interval
 
-justLookupFunctionName :: String -> Text
+justLookupFunctionName :: String -> String
 justLookupFunctionName id = fromJust $ lookup id functionNameMap
 
-transfromExpPN :: Expr -> [Text]
+transfromExpPN :: Expr -> [String]
 transfromExpPN (Apply (Variable id) es) =
   justLookupFunctionName id:concatMap transfromExpPN es
-transfromExpPN (Number n) = [T.pack $ show n]
-transfromExpPN (Variable id) = [T.pack id]
+transfromExpPN (Number n) = [show n]
+transfromExpPN (Variable id) = [id]
 
 -- All builtin function should be considered
 imageFunc :: Environment Dist -> Ident -> [Expr] -> M Type
@@ -669,7 +675,7 @@ nnTuple env p@(Pair (p1,p2)) =
       log_ ("try NN-Tuple " <> show p <> " domains are not all uncount, or not differentiable, or map to a sub space") $ return Nothing
     else
       let xs' = map (toList.getUC) xs in
-      let vs = zip (map T.pack vars) $ map (map intervalToTuple) xs' in
+      let vs = zip vars $ map (map intervalToTuple) xs' in
       do
         t <- range env p
         Mk (\k ->
@@ -685,6 +691,9 @@ nnTuple env p@(Pair (p1,p2)) =
     flatPair e = [e]
     fixCheck e vs =
       do
+        let concatE = List.intercalate "##" e
+        
+        readProcessStderr (shell ("python3 " <> "/home/dhz/probprog/src/nnTupe.py " <> "e"))
         Py.initialize
         pythonpath <- Py.getPath
         T.putStrLn ("Python path at startup is: " <> pythonpath <> "\n")
@@ -805,6 +814,6 @@ nn env p@(Pair (x,y)) =
                 if all isJust [xt, yt] && checkType (fromJust xt) (fromJust yt) then
                   log_ ("apply NN-Fix on " <> show p) $ return (Just $ P (fromJust xt) (fromJust yt))
                 else log_ (show p <> " is not nn") $ return Nothing
-    
+
 
 nn env e@Loop {} = log_ ("loop is not nn, " <> show e) $ return Nothing

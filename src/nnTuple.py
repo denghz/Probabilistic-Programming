@@ -30,7 +30,10 @@ def nnTuple(e,vs):
         session.evaluate("Inv[zzz_] := 1/zzz")
         variables = list(map(lambda x:x[0], vs))
         ranges = list(map(lambda x:x[1:], vs))
-   
+        def chunks4(lst):
+            for i in range(0, len(lst), 4):
+                yield tuple(lst[i:i + 4])
+        ranges = list(map(lambda x: list(chunks4(x)), ranges))
         print("nnTuple variable " + str(variables))
         
         print("nnTuple ranges " + str(ranges))
@@ -72,14 +75,19 @@ def nnTuple(e,vs):
         # Y depends on X
         
 if __name__ == "__main__":
+    
     spl = lambda lst, delim: [list(y) for x, y in itertools.groupby(lst, lambda z: z == delim) if not x]
     args = sys.argv[1:]
-    res = spl(args, "||")
-    print(res)
-    exp = res[0]
-    exp = spl (exp, "##")
-    vs = res[1]
-    vs = spl(vs, "##")
-    # e = [["Plus", "x", "y"], ["Plus", "x", "Minus", "y"]]
-    # vs = [('x',[]), ('y', [])]
+    exp = []
+    vs = []
+    if args == []:
+        exp = [["Plus", "x", "y"], ["Plus", "x", "Minus", "y"]]
+        vs = vs = [['x'], ['y']]
+    else:
+        res = spl(args, "||")
+        exp = res[0]
+        exp = spl (exp, "##")
+        vs = res[1]
+        vs = spl(vs, "##")
+    
     print(nnTuple(exp,vs), file=sys.stderr)

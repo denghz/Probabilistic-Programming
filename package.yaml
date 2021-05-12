@@ -31,6 +31,8 @@ dependencies:
 - filepath
 - directory
 - cpython
+- stm
+- typed-process
 
 library:
   source-dirs: src

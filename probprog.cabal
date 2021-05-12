@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: edaa55e8038704680f645e1ae2daebee300df49f60abcba0a73dbb48069b763e
+-- hash: c6e178fc4f5964920c13f2db52037e4745b89c3d155da5adb6eac6149bee58ed
 
 name:           probprog
 version:        0.1.0.0
@@ -48,7 +48,9 @@ library
     , directory
     , filepath
     , mtl
+    , stm
     , text
+    , typed-process
     , unix
   default-language: Haskell2010
 
@@ -70,7 +72,9 @@ executable probprog-exe
     , filepath
     , mtl
     , probprog
+    , stm
     , text
+    , typed-process
     , unix
   default-language: Haskell2010
 
@@ -93,6 +97,8 @@ test-suite probprog-test
     , filepath
     , mtl
     , probprog
+    , stm
     , text
+    , typed-process
     , unix
   default-language: Haskell2010

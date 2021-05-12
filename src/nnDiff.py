@@ -38,6 +38,10 @@ def nnDiff(e, vs):
     variables = list(map(lambda x:x[0], vs))
     print("variable " + str(variables))
     ranges = list(map(lambda x:x[1:], vs))
+    def chunks4(lst):
+        for i in range(0, len(lst), 4):
+            yield tuple(lst[i:i + 4])
+    ranges = list(map(lambda x: list(chunks4(x)), ranges))
     print("ranges " + str(ranges))
     def rangeToWlexpr(var, lb, lbt, ub, ubt):
         lbt = '<' if lbt == 'Open' else '<='
@@ -128,12 +132,16 @@ def countableManySolution(f, vs):
 if __name__ == "__main__":
     spl = lambda lst, delim: [list(y) for x, y in itertools.groupby(lst, lambda z: z == delim) if not x]
     args = sys.argv[1:]
-    res = spl(args, "||")
-    print(res)
-    exp = res[0]
-    vs = res[1]
-    vs = spl(vs, "##")
-    # e = ["Plus", "Times", "x", "x", "Times", "x", "y"]
-    # vs = [('x',[]), ('y', [])]
+    exp = []
+    vs = []
+    if args == []:
+        exp = ["Plus", "Times", "x", "x", "Times", "x", "y"]
+        vs = [['x', "0", "Open", "10", "Open"], ['y']]
+    else:
+        res = spl(args, "||")
+        print(res)
+        exp = res[0]
+        vs = res[1]
+        vs = spl(vs, "##")
     print(nnDiff(exp, vs), file =sys.stderr)
 
