@@ -70,6 +70,6 @@ def nnTuple(e,vs):
         # Y depends on X
         
 if __name__ == "__main__":
-    e = [["Exp", "Log", "x"], ["Minus", "x"]]
-    vs = [('x',[])]
+    e = [["Plus", "x", "y"], ["Plus", "x", "Minus", "y"]]
+    vs = [('x',[]), ('y', [])]
     print(nnTuple(e,vs))

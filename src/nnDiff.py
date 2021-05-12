@@ -71,7 +71,7 @@ def nnDiff(e, vs):
         return False
 
 def countableManySolution(f, vs):
-    vs = list(map(lambda v:"Global`" + v, vs)) + vs
+    vs = list(map(lambda v:"Global`" + v, vs)) + list(vs)
     with WolframLanguageSession() as session:
         getfreeVars = wlexpr("Reduce`FreeVariables")
         if f == ():
