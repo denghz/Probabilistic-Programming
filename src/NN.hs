@@ -20,6 +20,7 @@ import           System.IO (stdout, stderr, hPutStrLn, Newline (CRLF))
 import qualified CPython.Types.Tuple as Py
 import qualified CPython.Types.Integer as Py
 import Data.Typeable
+
 import CPython.Simple.Instances
 import Data.Char(toUpper)
 import qualified Data.IntervalSet as Intervals(intersection, null, member, whole, span, union)
@@ -44,12 +45,17 @@ import Syntax
 import Continuation
 import Log
 
+
+intersect :: Eq a => [a] -> [a] -> [a]
+intersect [] _ = []
+intersect (x:xs) l | x `elem` l = x : intersect xs l
+                   | otherwise = intersect xs l
+
 removeDuplicates :: Eq a => [a] -> [a]
 removeDuplicates = foldl (\seen x -> if x `elem` seen then seen
                                       else seen ++ [x]) []
 freeVars :: Expr -> [Ident]
 freeVars e = removeDuplicates $ freeVars' e
-
 
 freeVars' :: Expr -> [Ident]
 freeVars' (Variable x) =
@@ -66,8 +72,9 @@ freeVars' (Loop bs1 e1 e2 bs2) =
 freeVars' _ = []
 
 isSingleValue :: Type -> Bool
-isSingleValue (T (C r)) = let r' = toList r in length r' == 1 && isSingleton (head r') 
+isSingleValue (T (C r)) = let r' = toList r in length r' == 1 && isSingleton (head r')
 isSingleValue (P t1 t2) = isSingleValue t1 && isSingleValue t2
+isSingleValue _ = False
 
 
 functionNameMap :: [(String,Text)]
@@ -248,8 +255,25 @@ transfromExpPN (Number n) = [T.pack $ show n]
 transfromExpPN (Variable id) = [T.pack id]
 
 -- All builtin function should be considered
-imageFunc :: Ident -> [Type] -> M Type
-imageFunc id args
+imageFunc :: Environment Dist -> Ident -> [Expr] -> M Type
+imageFunc env id es =
+  do
+    ts <- mapM (range env) es
+    let xr = head ts
+    yr <- range env (Apply (Variable "~") [y])
+    diffr <- mapM (range env . Variable) diff
+    let nodiff = all isSingleValue diffr
+    if id == "+" && xr == yr && nodiff then return (T (C (singleton (Finite 0 <=..<= Finite 0))))
+    else imageFunc' id ts
+  where
+    x = head es
+    y = last es
+    xvars = freeVars x
+    yvars = freeVars y
+    inter = xvars `intersect` yvars
+    diff = filter (`notElem` inter) (xvars <> yvars)
+imageFunc' :: Ident -> [Type] -> M Type
+imageFunc' id args
   | id `elem` ["+", "-", "*", "<", "<=", ">", ">=", "=", "<>"] =
       let x = head args in let y = last args in
       let rx = getRange x in let ry = getRange y in
@@ -478,74 +502,84 @@ imageDist :: Environment Dist -> Dist -> M Type
 imageDist env (Return e) = range env e
 imageDist env (Let (Rand x d1) d2) = imageDist (define env x d1) d2
 imageDist env (Score e d) = imageDist env d -- unable to calculate, for safety, return the upperbound
-imageDist env (PrimD _ id es) =
+imageDist env (PrimD _ id es) = imagePrim env id es
+
+
+imagePrim :: Environment Dist -> Ident -> [Expr] -> M Type
+imagePrim env "Normal" es =
+  if length es /= 2 then error "Normal distribution can only have two parameters."
+  else
     do
       rs <- mapM (range env) es
-      imagePrim id rs
+      let variance = getRange $ last rs in let mean = head rs in
+        if (do v <- getC variance; return $ v `isSubsetOf` singleton (Finite 0 <=..<= Finite 0)) == Just True
+        then return mean
+        else if (do v <- getC variance; return $ 0 `Intervals.member` v) == Just True then return $ unionType mean (T (UC Intervals.whole))
+        else return (T (UC Intervals.whole))
 
-
-imagePrim :: Ident -> [Type] -> M Type
-imagePrim "Normal" rs =
-  if length rs /= 2 then error "Normal distribution can only have two parameters."
-  else
-    let variance = getRange $ last rs in let mean = head rs in
-      if
-        (do v <- getC variance; return $ v `isSubsetOf` singleton (Finite 0 <=..<= Finite 0)) == Just True
-      then return mean else return (T (UC Intervals.whole))
-
-imagePrim "Uniform" rs
-  | length rs /= 2 = error (show (length rs) <> "Unifrom distribution can only have two parameters.")
-  | ifIntersect x y = error "arguments of uniform distribution cannot overlap"
+imagePrim env "Uniform" es
+  | length es /= 2 = error (show (length es) <> "Unifrom distribution can only have two parameters.")
   | otherwise =
-      let cr  = do
-                  rx <- getC x
-                  ry <- getC y
-                  let is = intersections [rx,ry]
-                  if not $ Intervals.null is then return (C is)
-                  else Nothing
-      in let uc = lift2BothtoUC (\x y -> singleton (Intervals.span (x `union` y))) x y in
-        case cr of
-          Just c -> return $ T (combineCUC c uc)
-          Nothing -> return $ T uc
+      do
+        rs <- mapM (range env) es
+        diffr <- mapM (range env . Variable) diff
+        let nodiff = all isSingleValue diffr
+        let xr = head rs
+        let yr = last rs
+        let x = getRange xr
+        let y = getRange yr
+        if xr == yr && nodiff then
+          return $ mapType (liftUCtoC id) xr
+        else if ifIntersect x y then error "arguments of uniform distribution cannot overlap"
+        else do
+          let cr = (do
+                      rx <- getC x
+                      ry <- getC y
+                      let is = intersections [rx,ry]
+                      if not $ Intervals.null is then return (C is)
+                      else Nothing)
+          let uc = lift2BothtoUC (\x y -> singleton (Intervals.span (x `union` y))) x y
+          case cr of
+            Just c -> return $ T (combineCUC c uc)
+            Nothing -> return $ T uc
   where
       ifIntersect r1 r2
         = not (checkSingOrNull $ lift2BothtoC Intervals.intersection r1 r2)
       checkSingOrNull (C r) = let rs = toList r in length rs == 1 && isSingleton (head rs) || Intervals.null r
-      x = getRange $ head rs
-      y = getRange $ last rs
+      x = head es
+      y = last es
+      xvars = freeVars x
+      yvars = freeVars y
+      inter = xvars `intersect` yvars
+      diff = filter (`notElem` inter) (xvars <> yvars)
 
-imagePrim "Roll" rs =
-  if length rs /= 1 then error "Roll distribution can only have one parameter"
+imagePrim env "Roll" es =
+  if length es /= 1 then error "Roll distribution can only have one parameter"
   else
-    case x of
-      C r ->
-        let ub = upperBound $ head (toDescList r)
-        in case ub of
-          PosInf -> return $ T (C Intervals.whole)
-          Finite n ->
-            if isInt 10 n then
-              return $ T (C (fromList (map (IntInterval.toInterval.IntInterval.singleton) [1..floor n])))
-            else intErr
-      _ -> intErr
+    do
+      x' <- range env e
+      let x = getRange x'
+      case x of
+        C r ->
+          let ub = upperBound $ head (toDescList r)
+          in case ub of
+            PosInf -> return $ T (C Intervals.whole)
+            Finite n ->
+              if isInt 10 n then
+                return $ T (C (fromList (map (IntInterval.toInterval.IntInterval.singleton) [1..floor n])))
+              else intErr
+        _ -> intErr
   where
     intErr = error "argument of Roll must be an integer"
-    x = getRange $ head rs
+    e = head es
 
-imagePrim "WRoll" rs =
-  let xs = map (getRange.fstType) rs in
-  let unionRange = lift2CCtoC Intervals.union in
-  let res = foldr1 unionRange xs in return (T res)
-
-
-imageExpr :: Environment Dist -> Expr -> M Type
-imageExpr env (Apply (Variable id) es) =
+imagePrim env "WRoll"  es =
   do
-    ts <- mapM (imageExpr env) es
-    imageFunc id ts
-imageExpr env (Variable x) = imageDist env (find env x)
-imageExpr env (Number n) = return (T (C (singleton $ Finite n <=..<= Finite n)))
-imageExpr env (Pair (x,y)) = P <$> imageExpr env x <*> imageExpr env y
-imageExpr env e = error $ "cannot calculate image of" <> show e
+    rs <- mapM (range env) es
+    let xs = map (getRange.fstType) rs
+    let unionRange = lift2CCtoC Intervals.union
+    let res = foldr1 unionRange xs
+    return (T res)
 
 range :: Environment Dist -> Expr -> M Type
 range env (Pair p) =
@@ -560,10 +594,7 @@ range env (If _ e1 e2) =
     t2 <- range env e2
     return $ unionType t1 t2
   -- this is a upperbound estimate, can be calculate more accurate by using the lattices library.
-range env (Apply (Variable n) es) =
-  do
-    rs <- mapM (range env) es
-    imageFunc n rs
+range env (Apply (Variable n) es) = imageFunc env n es
 
 range env (Variable x) = let d = find env x in imageDist env d
 range env Loop {} = return $ T (UC Intervals.whole) --unable to calculate, for safety, return the upperbound
@@ -582,13 +613,13 @@ nnDiff env e =
   if not $ diffFunction e then return Nothing
   else do
     let vars = freeVars e
-    xs <- mapM (imageExpr env . Variable) vars
+    xs <- mapM (range env . Variable) vars
     if any isPair xs || any isCountType xs then return Nothing
     else
       let xs' = map (toList.getUC.getRange) xs in
       let vs = zip (map T.pack vars) $ map (map intervalToTuple) xs' in
       do
-        t <- imageExpr env e
+        t <- range env e
         Mk (\k ->
           do
             b <- diffCheck (transfromExpPN e) vs
@@ -626,7 +657,7 @@ nnTuple env p@(Pair (p1,p2)) =
       let xs' = map (toList.getUC) xs in
       let vs = zip (map T.pack vars) $ map (map intervalToTuple) xs' in
       do
-        t <- imageExpr env p
+        t <- range env p
         Mk (\k ->
           do
             b <- fixCheck eList vs
@@ -684,16 +715,12 @@ nn env e@(Apply (Variable "+") xs) =
   if length xs /= 2 then error "+ takes two arguments"
     else
   do
-    t <- (do
-        ts <- nn env (Pair (head xs, last xs))
-        let ts' = do
-              t <- ts
-              let t1 = fstType t
-              let t2 = sndType t
-              return [t1, t2]
-        mapM (imageFunc "+") ts')
+    ts <- nn env (Pair (head xs, last xs))
     -- nnDiff env e
-    if isJust t then log_ ("apply NN-PLUS on " <> show e) $ return t
+    if isJust ts then
+      do
+        t <- imageFunc env "+" xs
+        log_ ("apply NN-PLUS on " <> show e) $ return (Just t)
     else nnDiff env e
 
 nn env e@(Apply (Variable "*") xs) =
@@ -721,7 +748,7 @@ nn env e@(Apply (Variable "*") xs) =
       let l | isJust ts = "apply NN-Mult on " <> show e
             | isJust ts' = "apply NN-Scale on " <> show e
             | otherwise = show e <> " is not NN-Mult and NN-Scale"
-      log_ l $ mapM (imageFunc "*") ts'
+      log_ l $ mapM (imageFunc' "*") ts'
 
     if isJust t then  return t
     else nnDiff env e
@@ -738,7 +765,7 @@ nn env e@(Apply (Variable id) xs)
         t <- do
           t <- nn env (head xs)
           let t' = fmap (:[]) t
-          mapM (imageFunc id) t'
+          mapM (imageFunc' id) t'
         if isJust t then log_ ("apply NN-OP or NN-PROJ on " <> show e) $ return t
         else nnDiff env e
   | otherwise = error $ id <> " not implemeneted"
@@ -751,7 +778,7 @@ nn env p@(Pair (x,y)) =
       xtUC <- nnUC env x
       ytUC <- nnUC env y
       let intersectVars = filter (`elem` freeVars x) (freeVars y)
-      intersT' <- mapM (imageExpr env . Variable) intersectVars
+      intersT' <- mapM (range env . Variable) intersectVars
       let intersT = filter (not.isSingleValue) intersT'
       if all isJust [xt, yt] && (null intersectVars || all isCountType intersT) && checkType (fromJust xt) (fromJust yt)
         then log_ ("apply NN-Pair on " <> show p) $ return (Just $ P (fromJust xt) (fromJust yt))
@@ -791,7 +818,7 @@ nnUC env e@(Apply (Variable "+") xs) =
             let t1 = fstType t
             let t2 = sndType t
             return [t1, t2]
-      mapM (imageFunc "+") ts'
+      mapM (imageFunc' "+") ts'
     if isJust t then log_ ("apply NN-PLUS UC on " <> show e) $ return t
     else nnDiff env e
 
@@ -800,13 +827,13 @@ nnUC env e@(Apply (Variable "*") xs) =
   if length xs /= 2 then error "* takes two arguments"
     else
   do
-    ts <- mapM (imageExpr env) xs
+    ts <- mapM (range env) xs
     if all isCountType ts then nn env e
     else do
       t1 <- nnUC env (head xs)
       t2 <- nnUC env (last xs)
       let ts = catMaybes [t1, t2]
-      t <- imageFunc "*" ts
+      t <- imageFunc' "*" ts
       log_ ("apply NN-SCALE UC on " <> show e) $ return (Just t)
 
 
@@ -818,7 +845,7 @@ nnUC env e@(Apply (Variable id) xs)
         t <- do
           t <- nnUC env (head xs)
           let t' = fmap (:[]) t
-          mapM (imageFunc id) t'
+          mapM (imageFunc' id) t'
         if isJust t then log_ ("apply NN-OP UC or NN-PROJ UC on " <> show e) $ return t
         else nnDiff env e
   | otherwise = error $ id <> " not implemeneted"

@@ -66,8 +66,6 @@ class InEqConsumer(WXFConsumer):
             else:
                 return super().build_function(head, args, **kwargs)
             
-
-
 def calRange(f, lb, lbt, ub, ubt):
     with WolframLanguageSession() as session:
         f = wlexpr(f)
