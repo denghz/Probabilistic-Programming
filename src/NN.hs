@@ -46,6 +46,13 @@ import Continuation
 import Log
 
 
+unCountConst :: Environment Dist -> Expr -> Bool
+unCountConst env (Variable e) =
+  case find env e of
+    Const d -> not $ isCountType d
+    _  -> False
+unCountConst _ _ = False
+
 intersect :: Eq a => [a] -> [a] -> [a]
 intersect [] _ = []
 intersect (x:xs) l | x `elem` l = x : intersect xs l
@@ -75,7 +82,6 @@ isSingleValue :: Type -> Bool
 isSingleValue (T (C r)) = let r' = toList r in length r' == 1 && isSingleton (head r')
 isSingleValue (P t1 t2) = isSingleValue t1 && isSingleValue t2
 isSingleValue _ = False
-
 
 functionNameMap :: [(String,Text)]
 functionNameMap =  [("sin", "Sin"), ("cos", "Cos"), ("tan", "Tan"), ("exp", "Exp"), ("log", "Log"), ("+", "Plus"),
@@ -120,7 +126,6 @@ instance FromPy Bool where
 mapER :: Extended a -> Maybe a
 mapER (Finite n) = Just n
 mapER _ = Nothing
-
 
   -- either count or uncount or both are possible
   -- Boundary of C set is in the set
@@ -503,7 +508,8 @@ imageDist env (Return e) = range env e
 imageDist env (Let (Rand x d1) d2) = imageDist (define env x d1) d2
 imageDist env (Score e d) = imageDist env d -- unable to calculate, for safety, return the upperbound
 imageDist env (PrimD _ id es) = imagePrim env id es
-
+imageDist env (Const t) =
+    return $ mapType (liftUCtoC id) t
 
 imagePrim :: Environment Dist -> Ident -> [Expr] -> M Type
 imagePrim env "Normal" es =
@@ -528,7 +534,7 @@ imagePrim env "Uniform" es
         let yr = last rs
         let x = getRange xr
         let y = getRange yr
-        if xr == yr && nodiff then
+        if xr == yr && nodiff || x == y then
           return $ mapType (liftUCtoC id) xr
         else if ifIntersect x y then error "arguments of uniform distribution cannot overlap"
         else do
@@ -536,7 +542,7 @@ imagePrim env "Uniform" es
                       rx <- getC x
                       ry <- getC y
                       let is = intersections [rx,ry]
-                      if not $ Intervals.null is then return (C is)
+                      if not $ Intervals.null is && not (any (unCountConst env) es) then return (C is)
                       else Nothing)
           let uc = lift2BothtoUC (\x y -> singleton (Intervals.span (x `union` y))) x y
           case cr of
@@ -573,7 +579,7 @@ imagePrim env "Roll" es =
     intErr = error "argument of Roll must be an integer"
     e = head es
 
-imagePrim env "WRoll"  es =
+imagePrim env "WRoll" es =
   do
     rs <- mapM (range env) es
     let xs = map (getRange.fstType) rs
@@ -588,11 +594,15 @@ range env (Pair p) =
     y <- range env (snd p)
     return (P x y)
 range _ (Number n) = return $ T (C (singleton $ Finite n <=..<= Finite n))
-range env (If _ e1 e2) =
+range env (If e1 e2 e3) =
   do
-    t1 <- range env e1
-    t2 <- range env e2
-    return $ unionType t1 t2
+    t <- range env e1
+    if t == T (C $ singleton (Finite 0 <=..<= Finite 0)) then range env e3
+    else if t == T (C $ singleton (Finite 1 <=..<= Finite 1)) then  range env e2
+    else do
+      t1 <- range env e1
+      t2 <- range env e2
+      return $ unionType t1 t2
   -- this is a upperbound estimate, can be calculate more accurate by using the lattices library.
 range env (Apply (Variable n) es) = imageFunc env n es
 
@@ -721,7 +731,7 @@ nn env e@(Apply (Variable "+") xs) =
       do
         t <- imageFunc env "+" xs
         log_ ("apply NN-PLUS on " <> show e) $ return (Just t)
-    else nnDiff env e
+    else log_ ("try to apply NN-Diff on " <> show e) $ nnDiff env e
 
 nn env e@(Apply (Variable "*") xs) =
   if length xs /= 2 then error "* takes two arguments"
@@ -742,7 +752,7 @@ nn env e@(Apply (Variable "*") xs) =
               do
                 t1' <- t1
                 t2' <- t2
-                if not (memberType 0 t1' && memberType 0 t2')
+                if not (memberType 0 t1' && memberType 0 t2') || any (unCountConst env) xs
                   then return [t1', t2']
                 else Nothing
       let l | isJust ts = "apply NN-Mult on " <> show e
@@ -751,7 +761,7 @@ nn env e@(Apply (Variable "*") xs) =
       log_ l $ mapM (imageFunc' "*") ts'
 
     if isJust t then  return t
-    else nnDiff env e
+    else log_ ("apply NN-PLUS on " <> show e) $ nnDiff env e
   where
     memberType n t =
       let t' = getRange t in
@@ -767,7 +777,7 @@ nn env e@(Apply (Variable id) xs)
           let t' = fmap (:[]) t
           mapM (imageFunc' id) t'
         if isJust t then log_ ("apply NN-OP or NN-PROJ on " <> show e) $ return t
-        else nnDiff env e
+        else log_ ("apply NN-PLUS on " <> show e) $ nnDiff env e
   | otherwise = error $ id <> " not implemeneted"
 
 nn env p@(Pair (x,y)) =
@@ -775,81 +785,20 @@ nn env p@(Pair (x,y)) =
     t <- do
       xt <- nn env x
       yt <- nn env y
-      xtUC <- nnUC env x
-      ytUC <- nnUC env y
       let intersectVars = filter (`elem` freeVars x) (freeVars y)
       intersT' <- mapM (range env . Variable) intersectVars
       let intersT = filter (not.isSingleValue) intersT'
-      if all isJust [xt, yt] && (null intersectVars || all isCountType intersT) && checkType (fromJust xt) (fromJust yt)
+      if all isJust [xt, yt] && (null intersT || all isCountType intersT) && checkType (fromJust xt) (fromJust yt)
         then log_ ("apply NN-Pair on " <> show p) $ return (Just $ P (fromJust xt) (fromJust yt))
-      -- else if all isJust [xtUC, ytUC] then
-      --     log_ ("apply NN-Fix on " <> show p) $ return $ Just (P (fromJust xtUC) (fromJust ytUC))
-      else log_ (show p <> " is not NN-Fix or NN-Pair") $ return Nothing
-    if isJust t then return t else nnTuple env p
+      else
+        do
+          let varsV = map (find env) intersectVars
+          let newEnv = defargs env intersectVars (map Const intersT')
+          xt <- nn newEnv x
+          yt <- nn newEnv y
+          if all isJust [xt, yt] && checkType (fromJust xt) (fromJust yt) then
+            log_ ("apply NN-Fix on " <> show p) $ return (Just $ P (fromJust xt) (fromJust yt))
+          else log_ (show p <> " is not NN-Fix or NN-Pair") $ return Nothing
+    if isJust t then return t else log_ ("try to appy NN-Tuple on " <> show p) $ nnTuple env p
 
 nn env e@Loop {} = log_ ("loop is not nn, " <> show e) $ return Nothing
-
-nnUC :: Environment Dist -> Expr -> M (Maybe Type)
-nnUC env (Variable x) = log_ ("Apply NN-Var UC on " <> x) $ nn env (Variable x)
-nnUC env (Number n) = log_ ("Apply NN-Count UC on " <> show n) $ nn env (Number n)
-nnUC env e@(If e1 e2 e3) =
-  do
-    t <- range env e1
-    if t == T (C $ singleton (Finite 0 <=..<= Finite 0)) then log_ ("apply NN-COND UC on " <> show e) $ nnUC env e3
-    else if t == T (C $ singleton (Finite 1 <=..<= Finite 1)) then log_ ("apply NN-COND UC on " <> show e) $ nnUC env e2
-    else
-      do
-        mt1 <- nnUC env e2
-        mt2 <- nnUC env e3
-        let res = do
-             t1 <- mt1
-             t2 <- mt2
-             if checkType t1 t2 then return (unionType t1 t2) else Nothing
-        log_ ("apply NN-IF UC on " <> show e) $ return res
-
-nnUC env e@(Apply (Variable "+") xs) =
-  if length xs /= 2 then error "+ takes two arguments"
-    else
-  do
-    t <- do
-      ts <- nnUC env (Pair (head xs, last xs))
-      let ts' = do
-            t <- ts
-            let t1 = fstType t
-            let t2 = sndType t
-            return [t1, t2]
-      mapM (imageFunc' "+") ts'
-    if isJust t then log_ ("apply NN-PLUS UC on " <> show e) $ return t
-    else nnDiff env e
-
---NN Multi UC just works if not both are Count by NN Scale and ignore Countable
-nnUC env e@(Apply (Variable "*") xs) =
-  if length xs /= 2 then error "* takes two arguments"
-    else
-  do
-    ts <- mapM (range env) xs
-    if all isCountType ts then nn env e
-    else do
-      t1 <- nnUC env (head xs)
-      t2 <- nnUC env (last xs)
-      let ts = catMaybes [t1, t2]
-      t <- imageFunc' "*" ts
-      log_ ("apply NN-SCALE UC on " <> show e) $ return (Just t)
-
-
-nnUC env e@(Apply (Variable id) xs)
-  | id `elem` ["~", "inv", "log", "exp", "sin", "cos", "tan", "fst", "snd"] =
-    if length xs /= 1 then error $ id <> " takes two arguments"
-    else
-      do
-        t <- do
-          t <- nnUC env (head xs)
-          let t' = fmap (:[]) t
-          mapM (imageFunc' id) t'
-        if isJust t then log_ ("apply NN-OP UC or NN-PROJ UC on " <> show e) $ return t
-        else nnDiff env e
-  | otherwise = error $ id <> " not implemeneted"
-
-nnUC env (Pair (x,y)) = nn env (Pair (x,y))
-
-nnUC env e@Loop {} = log_ ("loop is not nn, " <> show e) $ return Nothing

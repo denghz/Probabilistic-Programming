@@ -17,6 +17,7 @@ data Dist =
   | PrimD DistType Ident [Expr]
   | Let Bind Dist
   | Score Expr Dist
+  | Const Type
   deriving Show
 
 data DistType = DZ | DR
