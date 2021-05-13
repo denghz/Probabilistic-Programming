@@ -81,11 +81,11 @@ def calRange(f, lb, lbt, ub, ubt):
         expr = wl.FunctionRange([f(wl.x), ineq], wl.x, wl.y)
         wxf = session.evaluate_wxf(expr)
         res = binary_deserialize(wxf, consumer=InEqConsumer())
-        session.terminate()
         return res
 
 if __name__ == "__main__":
     args = sys.argv[1:]
+    print(args)
     if len(args) != 5:
         print("wrong number of args")
     else:
@@ -94,7 +94,12 @@ if __name__ == "__main__":
         lbt = args[2]
         ub =  None if args[3] == "Nothing" else float(args[3]) 
         ubt = args[4]
-        for e in calRange(f, lb, lbt, ub,ubt):
-            print(e[0], file=sys.stderr)
-            print(e[1], file=sys.stderr)
+
+        (lb, ub) = calRange(f, lb, lbt, ub,ubt)
+        def bToStr(b):
+            if b == None:
+                return "Nothing,Open"
+            else:
+                return "Just " + str(b[0]) + "," + str(b[1])
+        print(bToStr(lb) + "," + bToStr(ub), file=sys.stderr)
     # print(calRange("Sin", 0, "Closed", 0, "Closed"))

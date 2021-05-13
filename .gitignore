@@ -3,3 +3,4 @@
 dist/cabal-config-flags
 dist/setup-config
 .DS_Store
+test/__pycache__

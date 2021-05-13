@@ -46,8 +46,8 @@ def nnDiff(e, vs):
     def rangeToWlexpr(var, lb, lbt, ub, ubt):
         lbt = '<' if lbt == 'Open' else '<='
         ubt = '<' if ubt == 'Open' else '<='
-        lb = '-Infinity' if lb == None else str(lb)
-        ub = 'Infinity' if ub == None else str(ub)
+        lb = '-Infinity' if lb == "Nothing" else str(lb)
+        ub = 'Infinity' if ub == "Nothing" else str(ub)
         return wlexpr(lb+lbt+var+ubt+ub)
     conds = []
     for i in range(len(variables)):

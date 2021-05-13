@@ -292,4 +292,5 @@ obey (Define def) env =
   applyK (elabDist def env) (\env -> (do putStrLn $ print_defn env x;return env))
 
 
+main :: IO ()
 main = dialog parser obey init_env

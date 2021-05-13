@@ -1,28 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module NN where
-import qualified CPython as Py
-import qualified CPython.Protocols.Object as Py
-import qualified CPython.System as Py
-import qualified CPython.Types as Py
-import qualified CPython.Types.Dictionary as PyDict
-import qualified CPython.Types.Exception as Py
-import qualified CPython.Types.Module as Py
-import CPython.Simple
-import qualified Control.Exception as E
-import           Data.Semigroup ((<>))
-import           Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.IO as T
-import           System.Directory (getCurrentDirectory)
-import           System.FilePath ((</>))
+
 import System.IO
     ( stdout, stderr, hPutStrLn, Newline(CRLF), hPutStr, hClose )
-import qualified CPython.Types.Tuple as Py
-import qualified CPython.Types.Integer as Py
-import Data.Typeable
-
-import CPython.Simple.Instances
 import Data.Char(toUpper)
 import qualified Data.IntervalSet as Intervals(intersection, null, member, whole, span, union)
 import Data.IntervalSet
@@ -51,6 +32,12 @@ import qualified Data.ByteString.Lazy.Char8 as L8
 import Control.Concurrent.STM (atomically)
 import Control.Exception (throwIO)
 import qualified Data.List as List
+
+
+splitBy :: (Foldable t, Eq a) => a -> t a -> [[a]]
+splitBy delimiter = foldr f [[]] 
+            where f c l@(x:xs) | c == delimiter = []:l
+                             | otherwise = (c:x):xs
 
 unCountConst :: Environment Dist -> Expr -> Bool
 unCountConst env (Variable e) =
@@ -95,39 +82,7 @@ functionNameMap =  [("sin", "Sin"), ("cos", "Cos"), ("tan", "Tan"), ("exp", "Exp
 --Returns if x is an int to n decimal places
 isInt :: (Integral a, RealFrac b) => a -> b -> Bool
 isInt n x = round (10^fromIntegral n*(x-fromIntegral (round x)))==0
-instance (ToPy a, ToPy b) => ToPy (a,b) where
-  toPy (a,b)=
-    do
-      a' <- toPy a
-      b' <- toPy b
-      t <- Py.toTuple [a',b']
-      return $ Py.toObject t
 
-instance (ToPy a, ToPy b, ToPy c) => ToPy (a,b,c) where
-  toPy (a,b,c)=
-    do
-      a' <- toPy a
-      b' <- toPy b
-      c' <- toPy c
-      t <- Py.toTuple [a',b', c']
-      return $ Py.toObject t
-
-instance (ToPy a, ToPy b, ToPy c, ToPy d) => ToPy (a,b,c,d) where
-  toPy (a,b,c,d)=
-    do
-      a' <- toPy a
-      b' <- toPy b
-      c' <- toPy c
-      d' <- toPy d
-      t <- Py.toTuple [a',b', c', d']
-      return $ Py.toObject t
-instance FromPy Bool where
-  fromPy b =
-    do
-      b' <- easyFromPy Py.fromInteger Proxy b
-      if b' == 0 then return False
-      else if b' == 1 then return True
-      else error "return value from python is not an integer"
 
 mapER :: Extended a -> Maybe a
 mapER (Finite n) = Just n
@@ -250,9 +205,9 @@ map2Ints :: (Interval Double -> Interval Double -> Interval Double) -> IntervalS
 map2Ints f xs ys = fromList [f x y | x <- toList xs, y <- toList ys]
 
 
-intervalToTuple :: Interval a -> (Maybe a, Text, Maybe a, Text)
+intervalToTuple :: Interval a -> (Maybe a, String, Maybe a, String)
 intervalToTuple interval =
-      (mapER lb, T.pack (show lbt), mapER ub, T.pack (show ubt))
+      (mapER lb,  show lbt, mapER ub, show ubt)
       where
         (lb, lbt) = lowerBound' interval
         (ub, ubt) = upperBound' interval
@@ -304,14 +259,15 @@ imageFunc' id args
           "snd" -> return $ sndType x
           id -> let rx = getRange x in
             if id `elem` ["sin", "cos", "tan"] then
+              let id' = fromJust $ lookup id functionNameMap in
               Mk (\k ->
-              (do
-              r <- liftMId (mapM1 (triRange id)) rx
-              k (T r)))
+                (do
+                r <- liftMId (mapMIntervalSet (triRange id')) rx
+                k (T r)))
             else if id == "floor" then return $ T (liftUCtoC (minop id) rx)
             else return $ T ( liftId (minop id) rx)
   where
-    mapM1 f xs =
+    mapMIntervalSet f xs =
       do
         xs' <- mapM f (toList xs)
         return (fromList xs')
@@ -487,31 +443,16 @@ imageFunc' id args
           logER (Finite n) = Finite (log n)
     triRange id x =
           do
-            cwd <- getCurrentDirectory
-            Py.initialize
-            pythonpath <- Py.getPath
-            T.putStrLn ("Python path at startup is: " <> pythonpath <> "\n")
-            let updatedPytonpath = pythonpath <> ":/home/dhz/.local/lib/python3.6/site-packages:/usr/local/lib/python3.6/dist-packages:/usr/lib/python3/dist-packages:./src"
-            T.putStrLn ("Setting Python path to: " <> updatedPytonpath <> "\n")
-            Py.setPath updatedPytonpath
-            let calRanges = call "functionRange" "calRange"
-            res <- calRanges
-                    [arg (T.pack $ toUpper (head id) : tail id),
-                    arg (mapER lb),
-                    arg (T.pack $ show lbt),
-                    arg (mapER ub),
-                    arg (T.pack $ show ubt) ] []
-            let (lb, lbt) = getLb (fst res)
-            let (ub, ubt) = getUb (snd res)
-            Py.finalize
-            return $ interval (lb, lbt) (ub, ubt)
-          where
-            (lb, lbt) = lowerBound' x
-            (ub, ubt) = upperBound' x
-            getLb Nothing = (NegInf, Open)
-            getLb (Just (lb, lbt)) = (Finite lb, read $ T.unpack lbt)
-            getUb Nothing = (PosInf, Open)
-            getUb (Just (ub, ubt)) = (Finite ub, read $ T.unpack ubt)
+            let (lb, lbt, ub, ubt) = intervalToTuple $! x
+            let args = unwords [id, boundTostr lb, show lbt, boundTostr ub, show ubt]
+            res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/functionRange.py " <> args))
+            let resWords = splitBy ',' $ L8.unpack res
+            print resWords
+            let lb' = maybe NegInf Finite $ read (head resWords)
+            let lbt' = read (resWords !! 1)
+            let ub' = maybe PosInf Finite $ read (resWords !! 2)
+            let ubt' = read (resWords !! 3)
+            return (interval (lb',lbt') (ub',ubt'))
 
 imageDist :: Environment Dist -> Dist -> M Type
 imageDist env (Return e) = range env e
@@ -628,6 +569,13 @@ diffFunction (Apply (Variable id) es)
   | otherwise = False
 diffFunction _ = False
 
+boundTostr :: Show a => Maybe a -> String
+boundTostr = maybe "Nothing" show
+
+vsToListStr :: Show a => [(Ident, [(Maybe a, String, Maybe a, String)])] -> [String]
+vsToListStr xs = List.intercalate ["\"##\""] $ map vsTostr xs
+    where vsTostr (v, xs) = v:concatMap (\(a,b,c,d) -> [boundTostr a, show b, boundTostr c, show d]) xs
+
 nnDiff :: Environment Dist -> Expr -> M (Maybe Type)
 nnDiff env e =
   if not $ diffFunction e then return Nothing
@@ -637,7 +585,7 @@ nnDiff env e =
     if any isPair xs || any isCountType xs then return Nothing
     else
       let xs' = map (toList.getUC.getRange) xs in
-      let vs = zip (map T.pack vars) $ map (map intervalToTuple) xs' in
+      let vs = zip vars $ map (map intervalToTuple) xs' in
       do
         t <- range env e
         Mk (\k ->
@@ -650,17 +598,11 @@ nnDiff env e =
   where
     diffCheck e vs =
       do
-        Py.initialize
-        pythonpath <- Py.getPath
-        T.putStrLn ("Python path at startup is: " <> pythonpath <> "\n")
-        -- Appending so that the user's PYTHONPATH variable (ready by python) can go first.
-        let updatedPytonpath = pythonpath <> ":/usr/lib/python2.7/dist-packages:/home/dhz/.local/lib/python3.6/site-packages:/usr/local/lib/python3.6/dist-packages:/usr/lib/python3/dist-packages:./src"
-        T.putStrLn ("Setting Python path to: " <> updatedPytonpath <> "\n")
-        Py.setPath updatedPytonpath
-        let nnDiff = call "nnDiff" "nnDiff"
-        res <- nnDiff [arg e, arg vs] []
-        Py.finalize
-        return (res :: Bool)
+        let expStr = e
+        let vsStr = vsToListStr vs
+        let args = unwords $ expStr <> ["\"||\""] <> vsStr
+        res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/nnDiff.py " <> args))
+        return (read (L8.unpack res))
 
 nnTuple :: Environment Dist -> Expr -> M (Maybe Type)
 nnTuple env p@(Pair (p1,p2)) =
@@ -691,22 +633,11 @@ nnTuple env p@(Pair (p1,p2)) =
     flatPair e = [e]
     fixCheck e vs =
       do
-        let concatE = List.intercalate "##" e
-        
-        readProcessStderr (shell ("python3 " <> "/home/dhz/probprog/src/nnTupe.py " <> "e"))
-        Py.initialize
-        pythonpath <- Py.getPath
-        T.putStrLn ("Python path at startup is: " <> pythonpath <> "\n")
-        -- Appending so that the user's PYTHONPATH variable (ready by python) can go first.
-        let updatedPytonpath = pythonpath <> ":/usr/lib/python2.7/dist-packages:/home/dhz/.local/lib/python3.6/site-packages:/usr/local/lib/python3.6/dist-packages:/usr/lib/python3/dist-packages:./src"
-        T.putStrLn ("Setting Python path to: " <> updatedPytonpath <> "\n")
-        Py.setPath updatedPytonpath
-
-        let nnTuple = call "nnTuple" "nnTuple"
-
-        res <- nnTuple [arg e, arg vs] []
-        Py.finalize
-        return (res :: Bool)
+        let expStr = List.intercalate ["\"##\""] e
+        let vsStr = vsToListStr vs
+        let args = unwords $ expStr <> ["\"||\""] <> vsStr
+        res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/nnTuple.py " <> args))
+        return (read (L8.unpack res))
 
 
 -- Nothing means not NN, can result in the type of high demension, everything demensition can be only Count or only UnCount, or both Count and UCount
@@ -807,13 +738,13 @@ nn env p@(Pair (x,y)) =
         t <- nnTuple env p
         if isJust t then return t
         else do
-                let varsV = map (find env) intersectVars
-                let newEnv = defargs env intersectVars (map Const intersT')
-                xt <- nn newEnv x
-                yt <- nn newEnv y
-                if all isJust [xt, yt] && checkType (fromJust xt) (fromJust yt) then
-                  log_ ("apply NN-Fix on " <> show p) $ return (Just $ P (fromJust xt) (fromJust yt))
-                else log_ (show p <> " is not nn") $ return Nothing
+          let varsV = map (find env) intersectVars
+          let newEnv = defargs env intersectVars (map Const intersT')
+          xt <- nn newEnv x
+          yt <- nn newEnv y
+          if all isJust [xt, yt] && checkType (fromJust xt) (fromJust yt) then
+            log_ ("apply NN-Fix on " <> show p) $ return (Just $ P (fromJust xt) (fromJust yt))
+          else log_ (show p <> " is not nn") $ return Nothing
 
 
 nn env e@Loop {} = log_ ("loop is not nn, " <> show e) $ return Nothing

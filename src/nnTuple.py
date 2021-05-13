@@ -89,5 +89,4 @@ if __name__ == "__main__":
         exp = spl (exp, "##")
         vs = res[1]
         vs = spl(vs, "##")
-    
     print(nnTuple(exp,vs), file=sys.stderr)
