@@ -11,8 +11,9 @@ isConst _ (Number n) = True
 isConst env (Variable a) = 
   case find env a of
     Const _ -> True
-    _ -> False
-isconst _ _ = False
+    _ -> False  
+isConst _ _ = False
+
 splitBy :: (Foldable t, Eq a) => a -> t a -> [[a]]
 splitBy delimiter = foldr f [[]] 
             where f c l@(x:xs) | c == delimiter = []:l

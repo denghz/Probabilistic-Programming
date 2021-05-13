@@ -35,28 +35,9 @@ import qualified Data.List as List
 import Helpers
 
 -- All builtin function should be considered
-imageFunc :: Environment Dist -> Ident -> [Expr] -> M Type
-imageFunc env id es =
-  do
-    ts <- mapM (range env) es
-    if id == "+" then
-        do
-          let xr = head ts
-          yr <- range env (Apply (Variable "~") [y])
-          diffr <- mapM (range env . Variable) diff
-          let nodiff = all isSingleValue diffr
-          if xr == yr && nodiff then return (T (C (singleton (Finite 0 <=..<= Finite 0))))
-          else imageFunc' id ts
-    else imageFunc' id ts
-  where
-    x = head es
-    y = last es
-    xvars = freeVars x
-    yvars = freeVars y
-    inter = xvars `intersect` yvars
-    diff = filter (`notElem` inter) (xvars <> yvars)
-imageFunc' :: Ident -> [Type] -> M Type
-imageFunc' id args
+
+imageFunc :: Ident -> [Type] -> M Type
+imageFunc id args
   | id `elem` ["+", "-", "*", "<", "<=", ">", ">=", "=", "<>"] =
       let x = head args in let y = last args in
       let rx = getRange x in let ry = getRange y in
@@ -367,18 +348,21 @@ range env (If e1 e2 e3) =
       t2 <- range env e2
       return $ unionType t1 t2
   -- this is a upperbound estimate, can be calculate more accurate by using the lattices library.
-range env (Apply (Variable n) es) = imageFunc env n es
+range env (Apply (Variable n) es) =
+  do
+    ts <- mapM (range env) es 
+    imageFunc n ts
 
 range env (Variable x) = let d = find env x in imageDist env d
 range env Loop {} = return $ T (UC Intervals.whole) --unable to calculate, for safety, return the upperbound
 
-nnDiff :: Environment Dist -> Expr -> M (Maybe Type)
+nnDiff :: Environment Dist -> Expr -> M [Type]
 nnDiff env e =
-  if not $ diffFunction e then return Nothing
+  if not $ diffFunction e then return []
   else do
     let vars = freeVars e
     xs <- mapM (range env . Variable) vars
-    if any isPair xs || any isCountType xs then return Nothing
+    if any isPair xs || any isCountType xs then return []
     else
       let xs' = map (toList.getUC.getRange) xs in
       let vs = zip vars $ map (map intervalToTuple) xs' in
@@ -388,8 +372,8 @@ nnDiff env e =
           do
             b <- diffCheck (transfromExpPN e) vs
             putStrLn $ "nnDiff result of "  <> show e <> " is " <> show b
-            if b then k (Just t)
-            else k Nothing
+            if b then k [t]
+            else k []
           )
   where
     diffCheck e vs =
@@ -400,7 +384,7 @@ nnDiff env e =
         res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/nnDiff.py " <> args))
         return (read (L8.unpack res))
 
-nnTuple :: Environment Dist -> Expr -> M (Maybe Type)
+nnTuple :: Environment Dist -> Expr -> M [Type]
 nnTuple env p@(Pair (p1,p2)) =
   let pList = flatPair p in
   let eList = map transfromExpPN pList in
@@ -408,9 +392,9 @@ nnTuple env p@(Pair (p1,p2)) =
   let allDiff = all diffFunction pList in
   let isSquare = length vars == length pList in
   do
-    xs <- mapM (fmap (getRange . fromJust) . nn env . Variable) vars
+    xs <- mapM (fmap getRange . range env . Variable) vars
     if not (all isUC xs) || not allDiff || not isSquare then
-      log_ ("try NN-Tuple " <> show p <> " domains are not all uncount, or not differentiable, or map to a sub space") $ return Nothing
+      log_ ("try NN-Tuple " <> show p <> " domains are not all uncount, or not differentiable, or map to a sub space") $ return []
     else
       let xs' = map (toList.getUC) xs in
       let vs = zip vars $ map (map intervalToTuple) xs' in
@@ -420,10 +404,9 @@ nnTuple env p@(Pair (p1,p2)) =
           do
             b <- fixCheck eList vs
             putStrLn $ "nnTuple result of "  <> show p <> " is " <> show b
-            if b then k (Just t)
-            else k Nothing
+            if b then k [t]
+            else k []
           )
-
   where
     flatPair (Pair (p1,p2)) = flatPair p1 <> flatPair p2
     flatPair e = [e]
@@ -435,16 +418,18 @@ nnTuple env p@(Pair (p1,p2)) =
         res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/nnTuple.py " <> args))
         return (read (L8.unpack res))
 
+failnn :: Show a1 => a1 -> M [a2]
+failnn e = log_ (show e <> " is not nn") $ return []
 
 -- Nothing means not NN, can result in the type of high demension, everything demensition can be only Count or only UnCount, or both Count and UCount
-nn ::  Environment Dist -> Expr -> M (Maybe Type)
+nn :: Environment Dist -> Expr -> M [Type]
 nn env (Variable x) = log_ ("apply NN-VAR on " <> show x) $
   do
     r <- imageDist env (find env x)
-    return (Just r)
+    return [r]
 
 nn env (Number n) = log_ ("apply NN-Count on " <> show n)
-  $ return $ Just (T (C (singleton $ Finite n <=..<= Finite n)))
+  $ return [T (C (singleton $ Finite n <=..<= Finite n))]
 
 nn env e@(If e1 e2 e3) =
   do
@@ -458,8 +443,10 @@ nn env e@(If e1 e2 e3) =
         let res = do
              t1 <- mt1
              t2 <- mt2
-             if checkType t1 t2 then return (unionType t1 t2) else Nothing
-        log_ ("apply NN-IF on " <> show e) $ return res
+             if checkType t1 t2 then return (unionType t1 t2) else []
+        if not (null res) then
+          log_ ("apply NN-IF on " <> show e) $ return res
+        else failnn e
 
 nn env e@(Apply (Variable "+") xs) =
   if length xs /= 2 then error "+ takes two arguments"
@@ -469,19 +456,21 @@ nn env e@(Apply (Variable "+") xs) =
     let y = last xs
     xt <- nn env x
     yt <- nn env y
-    if (isConst env x && isJust yt) || (isConst env y && isJust xt) then
-      do
-        t <- imageFunc env "+" xs
-        log_ ("apply NN-Linear on " <> show e) $ return (Just t)
+    let ts = [[x,y] | x <- xt, y <- yt]
+    resTs <- mapM (imageFunc "+") ts
+    if (isConst env x && not (null yt)) || (isConst env y && not (null xt)) then
+      log_ ("apply NN-Linear on " <> show e) $ return resTs
     else
       do
         ts <- nn env (Pair (x, y))
-        -- nnDiff env e
-        if isJust ts then
-          do
-            t <- imageFunc env "+" xs
-            log_ ("apply NN-PLUS on " <> show e) $ return (Just t)
-        else log_ ("try to apply NN-Diff on " <> show e) $ nnDiff env e
+        if not (null ts) then
+            log_ ("apply NN-PLUS on " <> show e) $ return resTs
+        else do
+          t' <- nnDiff env e
+          if not (null t') then
+            log_ ("apply NN-Diff on " <> show e) $ return t'
+          else
+            failnn e
 
 nn env e@(Apply (Variable "*") xs) =
   if length xs /= 2 then error "* takes two arguments"
@@ -492,7 +481,7 @@ nn env e@(Apply (Variable "*") xs) =
       t1 <- nn env (head xs)
       t2 <- nn env (last xs)
       let ts' =
-            if isJust ts then
+            if not (null ts) then
               do
                 t <- ts
                 let t1 = fstType t
@@ -504,14 +493,20 @@ nn env e@(Apply (Variable "*") xs) =
                 t2' <- t2
                 if not (memberType 0 t1' && memberType 0 t2') || any (unCountConst env) xs
                   then return [t1', t2']
-                else Nothing
-      let l | isJust ts = "apply NN-Mult on " <> show e
-            | isJust ts' = "apply NN-Scale on " <> show e
+                else []
+      let l | not (null ts) = "apply NN-Mult on " <> show e
+            | not (null ts') = "apply NN-Scale on " <> show e
             | otherwise = show e <> " is not NN-Mult and NN-Scale"
-      log_ l $ mapM (imageFunc' "*") ts'
+      log_ l $ mapM (imageFunc "*") ts'
 
-    if isJust t then  return t
-    else log_ ("apply NN-PLUS on " <> show e) $ nnDiff env e
+    if not (null t) then return t
+    else
+      do
+        t' <- nnDiff env e
+        if not (null t') then
+          log_ ("apply NN-Diff on " <> show e) $ return t'
+        else
+          failnn e
   where
     memberType n t =
       let t' = getRange t in
@@ -525,13 +520,17 @@ nn env e@(Apply (Variable id) xs)
         t <- do
           t <- nn env (head xs)
           let t' = fmap (:[]) t
-          mapM (imageFunc' id) t'
-        if isJust t then 
+          mapM (imageFunc id) t'
+        if not (null t) then
           if id `elem` ["fst", "snd"] then
             log_ ("apply NN-PROJ on " <> show e) $ return t
-          else 
+          else
             log_ ("apply NN-OP on " <> show e) $ return t
-        else log_ ("apply NN-PLUS on " <> show e) $ nnDiff env e
+        else do
+          t' <- nnDiff env e
+          if not (null t') then
+           log_ ("apply NN-PLUS on " <> show e) $ return t'
+          else failnn e
   | otherwise = error $ id <> " not implemeneted"
 
 nn env p@(Pair (x,y)) =
@@ -541,18 +540,20 @@ nn env p@(Pair (x,y)) =
     let intersectVars = filter (`elem` freeVars x) (freeVars y)
     intersT' <- mapM (range env . Variable) intersectVars
     let intersT = filter (not.isSingleValue) intersT'
-    if all isJust [xt, yt] && null intersT
-      then log_ ("apply NN-Pair on " <> show p) $ return (Just $ P (fromJust xt) (fromJust yt))
+    if not (any null [xt, yt]) && null intersT
+      then log_ ("apply NN-Pair on " <> show p) $ return (P <$> xt <*> yt)
     else
       do
         t <- nnTuple env p
-        if isJust t then return t
+        if not (null t) then return t
         else do
           let varsV = map (find env) intersectVars
           let newEnv = defargs env intersectVars (map Const intersT')
-          xt <- nn newEnv x
-          yt <- nn newEnv y
-          if all isJust [xt, yt] then
-            log_ ("apply NN-Fix on " <> show p) $ return (Just $ P (fromJust xt) (fromJust yt))
-          else log_ (show p <> " is not nn") $ return Nothing
-nn env e@Loop {} = log_ ("loop is not nn, " <> show e) $ return Nothing
+          xt' <- nn newEnv x
+          yt' <- nn newEnv y
+          if not (all null [xt, yt]) then do
+            let t1 = P <$> xt <*> yt'
+            let t2 = P <$> xt' <*> yt
+            log_ ("apply NN-Fix on " <> show p) $ return (t1 ++ t2)
+          else failnn p
+nn env e@Loop {} = failnn e

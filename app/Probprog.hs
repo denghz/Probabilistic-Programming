@@ -218,14 +218,14 @@ ac :: Dist -> Type -> M Bool
 ac d t =
   do
     mt <- ac' empty_env d
-    log_ ("Expected: " <> show t <> ", Actual: " <> show mt) $ return (Just True == do
+    log_ ("Expected: " <> show t <> ", Actual: " <> show mt) $ return (or (do
       t' <- mt
-      return $ checkType t' t)
+      return $ checkType t' t))
 
-ac' :: Environment Dist -> Dist -> M (Maybe Type)
+ac' :: Environment Dist -> Dist -> M [Type]
 ac' env d@(PrimD t _ _)=
   do rs <- imageDist env d
-     return (Just rs)
+     return [rs]
 ac' env (Return e) =  nn env e
 ac' env (Score e d) = ac' env d
 ac' env (Let (Rand x d1) d2) =
@@ -277,7 +277,7 @@ obey :: Phrase -> Env -> IO Env
 
 obey (Calculate (dist, t)) env =
   applyK (
-  do 
+  do
     d <- simplify env dist
     b <- ac d t
     return (d,b)
