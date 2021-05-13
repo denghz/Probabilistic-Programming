@@ -26,7 +26,7 @@ instance Show Token where
       LPAR -> "("; RPAR -> ")"; COMMA -> ","
       EQUAL -> "="; SEMI -> ";";  MINUS -> "-";
       BRA -> "["; KET -> "]"; LBRACE -> "{";
-      RBRACE -> "}"; TILDE -> "~"; CT -> "Countable"; UCT -> "Uncountable"
+      RBRACE -> "}"; TILDE -> "~"; CT -> "C"; UCT -> "L"
       BADTOK c -> [c]
 
 kwlookup :: String -> Token
@@ -36,7 +36,7 @@ kwlookup =
     ("in", IN), ("loop", LOOP), ("score", SCORE), ("do", DO),
     ("return", RETURN), ("get", GET),
     ("Roll", IDENT D "Roll"), ("WRoll", IDENT D "WRoll"),
-    ("Uniform", IDENT D "Uniform"), ("Normal", IDENT D "Normal"), ("c", CT), ("uc", UCT)]
+    ("Uniform", IDENT D "Uniform"), ("Normal", IDENT D "Normal"), ("C", CT), ("L", UCT)]
 
 tokenToType :: Token -> Type
 tokenToType CT = T (C whole)
