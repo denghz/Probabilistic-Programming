@@ -1,6 +1,7 @@
 
 module Syntax where
 import Data.IntervalSet(IntervalSet(..))
+import Environment
 data Type = T Range | P Type Type
   deriving (Eq, Show)
 data Range =
@@ -32,6 +33,7 @@ data Expr =
   | Pair (Expr, Expr)
   | Inverse Expr
   | Diff Expr
+  | Integrate Expr
   | Empty
   deriving (Show,Eq)
 

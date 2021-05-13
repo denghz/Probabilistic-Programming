@@ -5,7 +5,7 @@ import qualified Data.Map as Map
 import Data.Maybe(fromMaybe)
 type Ident = String
 
-newtype Environment v = Env (Map.Map Ident v) deriving Show
+newtype Environment v = Env (Map.Map Ident v) deriving (Show,Eq)
 
 empty_env :: Environment v
 empty_env = Env Map.empty
