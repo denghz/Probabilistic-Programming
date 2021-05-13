@@ -1,0 +1,31 @@
+RealInverse[a_. x_^q_Integer?Positive + b_., x_] /; FreeQ[{a, b}, x] := 
+  Surd[(x-b)/a, q]
+
+RealInverse[expr_, x_] := 
+  Module[{y, red},
+    red = Reduce[x == (expr /. x -> y), y, Reals];
+    ToPW[PWTerm[#, y]& /@ OrList[BooleanConvert[red, "DNF"]], x]
+  ]
+
+OrList[HoldPattern[Or][args__]] := {args}
+OrList[e_] := {e}
+
+PWTerm[And[cond1___, y_ == root_, cond2___], y_] /; FreeQ[{root, And[cond1, cond2]}, y] := {root, And[cond1, cond2]}
+PWTerm[y_ == root_, y_] /; FreeQ[root, y] := {root, True}
+PWTerm[___] = $Failed;
+
+ToPW[lis_?MatrixQ, x_] /; Length[First[lis]] == 2 := 
+  With[{condlist = Last[Transpose[lis]]},
+    Piecewise[lis, Undefined] /; DisjointConditionsQ[condlist, x]
+]
+ToPW[___] = $Failed;
+
+DisjointConditionsQ[{_}, _] = True;
+DisjointConditionsQ[cond_List, x_]:=
+  Reduce[And @@ Table[DisjointCondition[cond, i], {i, Length[cond]}], x]
+
+DisjointCondition[cond_, i_] := 
+  If[TrueQ[cond[[i]]],
+    True,
+    Implies[cond[[i]], Not[And @@ Delete[cond, i]]]
+]

@@ -30,6 +30,8 @@ data Expr =
   | Apply Expr [Expr]
   | Loop [(Ident, Expr)] Expr Expr [(Ident, Expr)]
   | Pair (Expr, Expr)
+  | Inverse Expr
+  | Diff Expr
   | Empty
   deriving (Show,Eq)
 
