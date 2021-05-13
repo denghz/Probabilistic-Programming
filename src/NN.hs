@@ -447,7 +447,6 @@ imageFunc' id args
             let args = unwords [id, boundTostr lb, show lbt, boundTostr ub, show ubt]
             res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/functionRange.py " <> args))
             let resWords = splitBy ',' $ L8.unpack res
-            print resWords
             let lb' = maybe NegInf Finite $ read (head resWords)
             let lbt' = read (resWords !! 1)
             let ub' = maybe PosInf Finite $ read (resWords !! 2)
