@@ -437,7 +437,7 @@ nnTuple env p@(Pair (p1,p2)) =
 
 
 -- Nothing means not NN, can result in the type of high demension, everything demensition can be only Count or only UnCount, or both Count and UCount
-nn :: Environment Dist -> Expr -> M (Maybe Type)
+nn ::  Environment Dist -> Expr -> M (Maybe Type)
 nn env (Variable x) = log_ ("apply NN-VAR on " <> show x) $
   do
     r <- imageDist env (find env x)
@@ -467,7 +467,9 @@ nn env e@(Apply (Variable "+") xs) =
   do
     let x = head xs
     let y = last xs
-    if isConst env x || isConst env y then
+    xt <- nn env x
+    yt <- nn env y
+    if (isConst env x && isJust yt) || (isConst env y && isJust xt) then
       do
         t <- imageFunc env "+" xs
         log_ ("apply NN-Linear on " <> show e) $ return (Just t)
@@ -539,7 +541,7 @@ nn env p@(Pair (x,y)) =
     let intersectVars = filter (`elem` freeVars x) (freeVars y)
     intersT' <- mapM (range env . Variable) intersectVars
     let intersT = filter (not.isSingleValue) intersT'
-    if all isJust [xt, yt] && (null intersT || all isCountType intersT) && checkType (fromJust xt) (fromJust yt)
+    if all isJust [xt, yt] && null intersT
       then log_ ("apply NN-Pair on " <> show p) $ return (Just $ P (fromJust xt) (fromJust yt))
     else
       do
@@ -550,7 +552,7 @@ nn env p@(Pair (x,y)) =
           let newEnv = defargs env intersectVars (map Const intersT')
           xt <- nn newEnv x
           yt <- nn newEnv y
-          if all isJust [xt, yt] && checkType (fromJust xt) (fromJust yt) then
+          if all isJust [xt, yt] then
             log_ ("apply NN-Fix on " <> show p) $ return (Just $ P (fromJust xt) (fromJust yt))
           else log_ (show p <> " is not nn") $ return Nothing
 nn env e@Loop {} = log_ ("loop is not nn, " <> show e) $ return Nothing
