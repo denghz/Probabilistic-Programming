@@ -448,7 +448,7 @@ nn env e@(If e1 e2 e3) =
         else failnn e
 
 nn env e@(Apply (Variable "+") xs) =
-  if length xs /= 2 then error "+ takes two arguments"
+  if length xs /= 2 then error (show xs <> " + takes two arguments")
     else
   do
     let x = head xs

@@ -3,3 +3,4 @@ let x ~ Uniform(0,1) in return (sin(x)) in uc;
 let x ~ Uniform(0,1) in let y ~ Uniform(0,1) in return (x+y,x+(-y)) in (uc,uc);
 
 let x ~ Uniform(0,1) in let y ~ Uniform(0,1) in return (x+y,x) in (uc,uc);
+let x ~ Uniform(0,1) in return (sin(x*x) + cos(x*x)) in uc;

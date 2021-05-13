@@ -85,7 +85,6 @@ def calRange(f, lb, lbt, ub, ubt):
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    print(args)
     if len(args) != 5:
         print("wrong number of args")
     else:

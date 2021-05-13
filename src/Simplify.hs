@@ -32,7 +32,9 @@ fullSimplify e@(Apply e1 es) =
     mathSimplify e =
       do
         let args = unwords $ transfromExpPN e
-        res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/nnDiff.py " <> args))
-        return $ readInfixExpr(words (L8.unpack res))
+        res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/simplify.py " <> args))
+        let wordList = words (L8.unpack res)
+        print wordList
+        return $ readInfixExpr wordList
 
 

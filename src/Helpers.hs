@@ -5,6 +5,7 @@ import Data.Interval
 import Data.IntervalSet
 import Data.Maybe
 import qualified Data.List as List
+import Text.Read(readMaybe)
 
 isConst :: Environment Dist -> Expr -> Bool
 isConst _ (Number n) = True
@@ -59,6 +60,12 @@ isSingleValue _ = False
 functionNameMap :: [(String,String)]
 functionNameMap =  [("sin", "Sin"), ("cos", "Cos"), ("tan", "Tan"), ("exp", "Exp"), ("log", "Log"), ("+", "Plus"),
                 ("-", "Subtract"), ("*", "Times"), ("~", "Minus"), ("inv", "Inv")]
+
+functions1 :: [[Char]]
+functions1 = ["Sin", "Cos", "Tan", "Exp", "Log", "Minus", "Inv"]
+
+functions2 :: [[Char]]
+functions2 = ["Plus", "Subtract", "Times"]
 
 reverseFunctionMap :: [(String,String)]
 reverseFunctionMap = [(b,a) | (a,b) <- functionNameMap]
@@ -229,11 +236,11 @@ readInfixExpr' (x:xs) =
   case lookup x reverseFunctionMap of
     Just f ->
       let (e1, ys) = readInfixExpr' xs in
-        if Prelude.null ys then (Apply (Variable f) [e1], ys)
+        if x `elem` functions1 then (Apply (Variable f) [e1], ys)
       else
         let (e2, zs) = readInfixExpr' ys in
          (Apply (Variable f) [e1,e2], zs)
     Nothing ->
-      case reads x :: [(Double, String)] of
-        [(n, "")] -> (Number n, xs)
-        [(_, v)]  -> (Variable v, xs)
+      case readMaybe x :: Maybe Double of
+        Just n -> (Number n, xs)
+        Nothing  -> (Variable x, xs)

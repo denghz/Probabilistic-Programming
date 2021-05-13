@@ -78,11 +78,11 @@ simplify e d = do
   log_ ("simplification result: " <> show d) (return d)
 
 simplify' :: Env -> Dist -> M Dist
-simplify' env (Return e) = Return <$> partialEval env e
-simplify' env (PrimD t x es) = PrimD t x <$> mapM (partialEval env) es
+simplify' env (Return e) = Return <$> (partialEval env =<< fullSimplify e)
+simplify' env (PrimD t x es) = PrimD t x <$> (mapM (partialEval env) =<< mapM fullSimplify es)
 simplify' env (Score e d) =
   do
-    e' <- partialEval env e
+    e' <- partialEval env =<< fullSimplify e
     Score e' <$> simplify' env d
 simplify' env (Let (Rand x d1) d2) =
   do
