@@ -275,19 +275,19 @@ imagePrim env "Uniform" es
         let nodiff = all isSingleValue diffr
         let xr = head rs
         let yr = last rs
-        let x = getRange xr
-        let y = getRange yr
+        let xRange = getRange xr
+        let yRange = getRange yr
         if xr == yr && nodiff || x == y then
           return $ mapType (liftUCtoC id) xr
-        else if ifIntersect x y then error "arguments of uniform distribution cannot overlap"
+        else if ifIntersect xRange yRange then error "arguments of uniform distribution cannot overlap"
         else do
           let cr = (do
-                      rx <- getC x
-                      ry <- getC y
+                      rx <- getC xRange
+                      ry <- getC yRange
                       let is = intersections [rx,ry]
                       if not $ Intervals.null is && not (any (unCountConst env) es) then return (C is)
                       else Nothing)
-          let uc = lift2BothtoUC (\x y -> singleton (Intervals.span (x `union` y))) x y
+          let uc = lift2BothtoUC (\x y -> singleton (Intervals.span (x `union` y))) xRange yRange
           case cr of
             Just c -> return $ T (combineCUC c uc)
             Nothing -> return $ T uc

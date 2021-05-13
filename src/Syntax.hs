@@ -10,7 +10,7 @@ data Phrase =
     Calculate (Dist, Type)
   | Evaluate Expr
   | Define Defn
-  deriving Show
+  deriving (Show,Eq)
 
 data Dist =
     Return Expr
@@ -18,7 +18,7 @@ data Dist =
   | Let Bind Dist
   | Score Expr Dist
   | Const Type
-  deriving Show
+  deriving (Show,Eq)
 
 data DistType = DZ | DR
   deriving (Show,Eq)
@@ -31,16 +31,16 @@ data Expr =
   | Loop [(Ident, Expr)] Expr Expr [(Ident, Expr)]
   | Pair (Expr, Expr)
   | Empty
-  deriving Show
+  deriving (Show,Eq)
 
 data Defn =
    Prob Ident Dist
-  deriving Show
+  deriving (Show,Eq)
 
 data Bind =
     Val Ident Expr
   | Rand Ident Dist
-  deriving Show
+  deriving (Show,Eq)
 
 type Ident = String
 
