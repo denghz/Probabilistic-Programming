@@ -29,7 +29,6 @@ import Log
 import System.Process.Typed ( readProcessStderr_, shell )
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Char8 as L8
-import Control.Concurrent.STM (atomically)
 import Control.Exception (throwIO)
 import qualified Data.List as List
 import Helpers

@@ -6,13 +6,13 @@ data Type = T Range | P Type Type
 data Range =
   C (IntervalSet Double) | UC (IntervalSet Double) | B (IntervalSet Double) (IntervalSet Double)
   deriving (Eq, Show)
-data Phrase =                 
+data Phrase =
     Calculate (Dist, Type)
-  | Evaluate Expr            
-  | Define Defn               
+  | Evaluate Expr
+  | Define Defn
   deriving Show
 
-data Dist = 
+data Dist =
     Return Expr
   | PrimD DistType Ident [Expr]
   | Let Bind Dist
@@ -22,18 +22,18 @@ data Dist =
 
 data DistType = DZ | DR
   deriving (Show,Eq)
-  
-data Expr =                  
-    Number Double            
-  | If Expr Expr Expr         
-  | Variable Ident            
-  | Apply Expr [Expr] 
+
+data Expr =
+    Number Double
+  | If Expr Expr Expr
+  | Variable Ident
+  | Apply Expr [Expr]
   | Loop [(Ident, Expr)] Expr Expr [(Ident, Expr)]
   | Pair (Expr, Expr)
-  | Empty                     
+  | Empty
   deriving Show
 
-data Defn =                   
+data Defn =
    Prob Ident Dist
   deriving Show
 

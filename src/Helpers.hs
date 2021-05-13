@@ -7,15 +7,15 @@ import Data.Maybe
 import qualified Data.List as List
 
 isConst :: Environment Dist -> Expr -> Bool
-isConst _ (Number n) = True 
-isConst env (Variable a) = 
+isConst _ (Number n) = True
+isConst env (Variable a) =
   case find env a of
     Const _ -> True
-    _ -> False  
+    _ -> False
 isConst _ _ = False
 
 splitBy :: (Foldable t, Eq a) => a -> t a -> [[a]]
-splitBy delimiter = foldr f [[]] 
+splitBy delimiter = foldr f [[]]
             where f c l@(x:xs) | c == delimiter = []:l
                              | otherwise = (c:x):xs
 
@@ -59,6 +59,9 @@ isSingleValue _ = False
 functionNameMap :: [(String,String)]
 functionNameMap =  [("sin", "Sin"), ("cos", "Cos"), ("tan", "Tan"), ("exp", "Exp"), ("log", "Log"), ("+", "Plus"),
                 ("-", "Subtract"), ("*", "Times"), ("~", "Minus"), ("inv", "Inv")]
+
+reverseFunctionMap :: [(String,String)]
+reverseFunctionMap = [(b,a) | (a,b) <- functionNameMap]
 --Returns if x is an int to n decimal places
 isInt :: (Integral a, RealFrac b) => a -> b -> Bool
 isInt n x = round (10^fromIntegral n*(x-fromIntegral (round x)))==0
@@ -214,3 +217,23 @@ boundTostr = maybe "Nothing" show
 vsToListStr :: Show a => [(Ident, [(Maybe a, String, Maybe a, String)])] -> [String]
 vsToListStr xs = List.intercalate ["\"##\""] $ map vsTostr xs
     where vsTostr (v, xs) = v:concatMap (\(a,b,c,d) -> [boundTostr a, show b, boundTostr c, show d]) xs
+
+
+readInfixExpr :: [String] -> Expr
+readInfixExpr xs = case readInfixExpr' xs of
+  (e, []) -> e
+  (e, xs) -> error ("read " <> show e <> ", but " <> show xs <> " left.")
+
+readInfixExpr' :: [String] -> (Expr, [String])
+readInfixExpr' (x:xs) =
+  case lookup x reverseFunctionMap of
+    Just f ->
+      let (e1, ys) = readInfixExpr' xs in
+        if Prelude.null ys then (Apply (Variable f) [e1], ys)
+      else
+        let (e2, zs) = readInfixExpr' ys in
+         (Apply (Variable f) [e1,e2], zs)
+    Nothing ->
+      case reads x :: [(Double, String)] of
+        [(n, "")] -> (Number n, xs)
+        [(_, v)]  -> (Variable v, xs)
