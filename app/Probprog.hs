@@ -7,7 +7,7 @@ import Continuation
 import NN
 import Log
 import Helpers
-import Symplify
+import Simplify
 -- An environment is a map from identifiers to values
 
 
