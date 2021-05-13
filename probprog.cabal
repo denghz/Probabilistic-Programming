@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c6e178fc4f5964920c13f2db52037e4745b89c3d155da5adb6eac6149bee58ed
+-- hash: 58d133b99ba1852d92b472610bca99f27af30969b165d8eeceb489f4ac3558c9
 
 name:           probprog
 version:        0.1.0.0
@@ -29,6 +29,7 @@ library
   exposed-modules:
       Continuation
       Environment
+      Helpers
       Log
       NN
       Parser
