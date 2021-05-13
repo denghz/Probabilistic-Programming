@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 9af83532395eae6d2a513c117ac1e80203dc8c311383c73a3834c0cf83edf64b
+-- hash: b6a199ff353f53e270c4ab5d4cf17d83f5fdfe5ec2c54fff0172f5ebddbde8f9
 
 name:           probprog
 version:        0.1.0.0
@@ -36,6 +36,7 @@ library
       Parsing
       Simplify
       Syntax
+      Transformer
   other-modules:
       Paths_probprog
   hs-source-dirs:

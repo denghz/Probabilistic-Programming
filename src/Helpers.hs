@@ -7,6 +7,45 @@ import Data.Maybe
 import qualified Data.List as List
 import Text.Read(readMaybe)
 
+
+
+substitute :: Environment Expr -> Expr -> Expr
+substitute env (If e1 e2 e3) = If (substitute env e1) (substitute env e2) (substitute env e3)
+substitute env (Apply e1 es) = Apply (substitute env e1) (map (substitute env) es)
+substitute env (Pair (e1,e2)) = Pair (substitute env e1, substitute env e2)
+substitute env (Loop bs1 e1 e2 bs2) =
+  Loop (zip xs1 es1') e1' e2' (zip xs2 es2')
+  where
+    (xs1, es1) = unzip bs1
+    (xs2, es2) = unzip bs2
+    es1' = map (substitute env) es1
+    env' = foldr (\x e -> define e x Empty) env xs1
+    e1' = substitute env' e1
+    e2' = substitute env' e2
+    es2' = map (substitute env') es2
+
+substitute env (Variable v) =
+  -- x = Empty means x is a random variable or x is a loop variable
+  case maybe_find env v of
+    Nothing -> Variable v
+    Just Empty -> Variable v
+    Just e -> e
+
+substitute env e = e
+
+newIdent :: Environment a -> Ident
+newIdent env = head $ filter (\x -> x `notElem` names env) allStrings
+  where
+    allStrings = [c:s | s <- "":allStrings, c <- ['a'..'z'] <> ['0'..'9']]
+
+
+
+
+
+
+
+
+
 isConst :: Environment Dist -> Expr -> Bool
 isConst _ (Number n) = True
 isConst env (Variable a) =
