@@ -6,10 +6,9 @@ import Environment
 import Continuation
 import NN
 import Log
-import Helpers
+import Helpers ( checkType, newIdent, substitute, freeVars )
 import Simplify
 -- An environment is a map from identifiers to values
-
 
 notDeterVars :: Env -> Expr -> [Ident]
 notDeterVars env e =

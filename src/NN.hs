@@ -33,6 +33,8 @@ import Control.Exception (throwIO)
 import qualified Data.List as List
 import Helpers
 
+import PrintBTree
+
 -- All builtin function should be considered
 
 imageFunc :: Ident -> [Type] -> M Type
@@ -349,7 +351,7 @@ range env (If e1 e2 e3) =
   -- this is a upperbound estimate, can be calculate more accurate by using the lattices library.
 range env (Apply (Variable n) es) =
   do
-    ts <- mapM (range env) es 
+    ts <- mapM (range env) es
     imageFunc n ts
 
 range env (Variable x) = let d = find env x in imageDist env d
@@ -417,68 +419,85 @@ nnTuple env p@(Pair (p1,p2)) =
         res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/nnTuple.py " <> args))
         return (read (L8.unpack res))
 
-failnn :: Show a1 => a1 -> M [a2]
-failnn e = log_ (show e <> " is not nn") $ return []
+
+failnn :: Expr -> M ([Type], Btree String)
+failnn e = log_ (show e <> " is not nn'") $ return ([], leafNode "")
+
+
+nn :: Environment Dist -> Expr -> M [Type]
+nn env e = 
+  do
+    (t, tr) <- nn' env e
+    Mk (\k ->
+      if null t then k t
+      else do
+        printt tr
+        print e
+        k t)
 
 -- Nothing means not NN, can result in the type of high demension, everything demensition can be only Count or only UnCount, or both Count and UCount
-nn :: Environment Dist -> Expr -> M [Type]
-nn env (Variable x) = log_ ("apply NN-VAR on " <> show x) $
+nn' :: Environment Dist -> Expr -> M ([Type], Btree String)
+nn' env (Variable x) = log_ ("apply NN-VAR on " <> show x) $
   do
     r <- imageDist env (find env x)
-    return [r]
+    return ([r], leafNode ("NN-Var " <> show x))
 
-nn env (Number n) = log_ ("apply NN-Count on " <> show n)
-  $ return [T (C (singleton $ Finite n <=..<= Finite n))]
+nn' env (Number n) = log_ ("apply NN-Count on " <> show n)
+  $ return ([T (C (singleton $ Finite n <=..<= Finite n))], leafNode ("NN-Count on " <> show n))
 
-nn env e@(If e1 e2 e3) =
+nn' env e@(If e1 e2 e3) =
   do
     t <- range env e1
-    if t == T (C $ singleton (Finite 0 <=..<= Finite 0)) then log_ ("apply NN-COND on " <> show e) $ nn env e3
-    else if t == T (C $ singleton (Finite 1 <=..<= Finite 1)) then log_ ("apply NN-COND on " <> show e) $ nn env e2
+    (mt1, tr1) <- nn' env e2
+    (mt2, tr2) <- nn' env e3
+    if t == T (C $ singleton (Finite 0 <=..<= Finite 0))
+      then log_ ("apply NN-COND on " <> show e) $
+      return (mt2, Node ("NN-Cond on " <> show e) tr2 Leaf)
+    else if t == T (C $ singleton (Finite 1 <=..<= Finite 1))
+      then log_ ("apply NN-COND on " <> show e) $
+      return (mt1, Node ("NN-Cond on " <> show e) tr1 Leaf)
     else
       do
-        mt1 <- nn env e2
-        mt2 <- nn env e3
         let res = do
              t1 <- mt1
              t2 <- mt2
              if checkType t1 t2 then return (unionType t1 t2) else []
         if not (null res) then
-          log_ ("apply NN-IF on " <> show e) $ return res
+          log_ ("apply NN-IF on " <> show e) $ return (res, Node ("NN-If on " <> show e) tr1 tr2)
         else failnn e
 
-nn env e@(Apply (Variable "+") xs) =
+nn' env e@(Apply (Variable "+") xs) =
   if length xs /= 2 then error (show xs <> " + takes two arguments")
     else
   do
     let x = head xs
     let y = last xs
-    xt <- nn env x
-    yt <- nn env y
+    (xt, trx) <- nn' env x
+    (yt, try) <- nn' env y
     let ts = [[x,y] | x <- xt, y <- yt]
     resTs <- mapM (imageFunc "+") ts
     if (isConst env x && not (null yt)) || (isConst env y && not (null xt)) then
-      log_ ("apply NN-Linear on " <> show e) $ return resTs
+      log_ ("apply NN-Linear on " <> show e) $ return (resTs, Node ("NN-Linear on " <> show e) trx try)
     else
       do
-        ts <- nn env (Pair (x, y))
+        (ts, trp) <- nn' env (Pair (x, y))
         if not (null ts) then
-            log_ ("apply NN-PLUS on " <> show e) $ return resTs
+            log_ ("apply NN-PLUS on " <> show e) $ return (resTs, Node ("NN-Plus on " <> show e) trp Leaf)
         else do
           t' <- nnDiff env e
           if not (null t') then
-            log_ ("apply NN-Diff on " <> show e) $ return t'
+            log_ ("apply NN-Diff on " <> show e) $ return (t', Node ("NN-Diff on " <> show e) Leaf Leaf)
           else
             failnn e
 
-nn env e@(Apply (Variable "*") xs) =
+nn' env e@(Apply (Variable "*") xs) =
   if length xs /= 2 then error "* takes two arguments"
     else
   do
-    t <- do
-      ts <- nn env (Pair (head xs, last xs))
-      t1 <- nn env (head xs)
-      t2 <- nn env (last xs)
+    (t, tr) <- do
+      (ts, trp) <- nn' env (Pair (head xs, last xs))
+      (t1, trx) <- nn' env (head xs)
+      (t2, try) <- nn' env (last xs)
       let ts' =
             if not (null ts) then
               do
@@ -493,17 +512,18 @@ nn env e@(Apply (Variable "*") xs) =
                 if not (memberType 0 t1' && memberType 0 t2') || any (unCountConst env) xs
                   then return [t1', t2']
                 else []
-      let l | not (null ts) = "apply NN-Mult on " <> show e
-            | not (null ts') = "apply NN-Scale on " <> show e
-            | otherwise = show e <> " is not NN-Mult and NN-Scale"
-      log_ l $ mapM (imageFunc "*") ts'
+      let l | not (null ts) = ("apply NN-Mult on " <> show e, Node ("NN-Mult on " <> show e) trp Leaf)
+            | not (null ts') = ("apply NN-Scale on " <> show e, Node ("NN-Scale on " <> show e) trx try)
+            | otherwise = (show e <> " is not NN-Mult and NN-Scale", leafNode "")
+      tRes <- mapM (imageFunc "*") ts'
+      log_ (fst l) $ return (tRes, snd l)
 
-    if not (null t) then return t
+    if not (null t) then return (t, tr)
     else
       do
         t' <- nnDiff env e
         if not (null t') then
-          log_ ("apply NN-Diff on " <> show e) $ return t'
+          log_ ("apply NN-Diff on " <> show e) $ return (t', leafNode ("NN-Diff on " <> show e))
         else
           failnn e
   where
@@ -511,48 +531,49 @@ nn env e@(Apply (Variable "*") xs) =
       let t' = getRange t in
        all (Intervals.member n . fst) (rangeToList t')
 
-nn env e@(Apply (Variable id) xs)
+nn' env e@(Apply (Variable id) xs)
   | id `elem` ["~", "inv", "log", "exp", "sin", "cos", "tan", "fst", "snd"] =
     if length xs /= 1 then error $ id <> " takes two arguments"
     else
       do
-        t <- do
-          t <- nn env (head xs)
+        (t,tr) <- do
+          (t, tr) <- nn' env (head xs)
           let t' = fmap (:[]) t
-          mapM (imageFunc id) t'
+          resT <- mapM (imageFunc id) t'
+          return (resT, tr)
         if not (null t) then
           if id `elem` ["fst", "snd"] then
-            log_ ("apply NN-PROJ on " <> show e) $ return t
+            log_ ("apply NN-PROJ on " <> show e) $ return (t, Node ("NN-Proj on " <> show e) tr Leaf)
           else
-            log_ ("apply NN-OP on " <> show e) $ return t
+            log_ ("apply NN-OP on " <> show e) $ return (t, Node ("NN-Op on " <> show e) tr Leaf)
         else do
           t' <- nnDiff env e
           if not (null t') then
-           log_ ("apply NN-PLUS on " <> show e) $ return t'
+           log_ ("apply NN-Diff on " <> show e) $ return (t', leafNode ("NN-Diff on " <> show e))
           else failnn e
   | otherwise = error $ id <> " not implemeneted"
 
-nn env p@(Pair (x,y)) =
+nn' env p@(Pair (x,y)) =
   do
-    xt <- nn env x
-    yt <- nn env y
+    (xt, trx) <- nn' env x
+    (yt, try) <- nn' env y
     let intersectVars = filter (`elem` freeVars x) (freeVars y)
     intersT' <- mapM (range env . Variable) intersectVars
     let intersT = filter (not.isSingleValue) intersT'
     if not (any null [xt, yt]) && null intersT
-      then log_ ("apply NN-Pair on " <> show p) $ return (P <$> xt <*> yt)
+      then log_ ("apply NN-Pair on " <> show p) $ return (P <$> xt <*> yt, Node ("NN-Pair on " <> show p) trx try)
     else
       do
         t <- nnTuple env p
-        if not (null t) then return t
+        if not (null t) then return (t, leafNode ("NN-Tuple on " <> show p))
         else do
           let varsV = map (find env) intersectVars
           let newEnv = defargs env intersectVars (map Const intersT')
-          xt' <- nn newEnv x
-          yt' <- nn newEnv y
+          (xt', trx') <- nn' newEnv x
+          (yt', try') <- nn' newEnv y
           if not (all null [xt, yt]) then do
             let t1 = P <$> xt <*> yt'
             let t2 = P <$> xt' <*> yt
-            log_ ("apply NN-Fix on " <> show p) $ return (t1 ++ t2)
+            log_ ("apply NN-Fix on " <> show p) $ return (t1 ++ t2, Node ("NN-Fix on " <> show p) trx' try')
           else failnn p
-nn env e@Loop {} = failnn e
+nn' env e@Loop {} = failnn e

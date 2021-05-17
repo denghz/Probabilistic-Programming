@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b6a199ff353f53e270c4ab5d4cf17d83f5fdfe5ec2c54fff0172f5ebddbde8f9
+-- hash: 9504f4477e29d2c0b4040f5d64c4e5dfe8856f6987832e617aead4422842ae5f
 
 name:           probprog
 version:        0.1.0.0
@@ -34,6 +34,7 @@ library
       NN
       Parser
       Parsing
+      PrintBTree
       Simplify
       Syntax
       Transformer
