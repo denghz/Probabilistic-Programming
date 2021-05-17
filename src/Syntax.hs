@@ -33,7 +33,8 @@ data Expr =
   | Pair (Expr, Expr)
   | Inverse Expr
   | Diff Expr
-  | Integrate Expr
+  | Integrate Expr 
+  | IntegrateBound Expr (Maybe Expr) (Maybe Expr)
   | Func [Expr] Expr
   | Empty
   deriving (Show,Eq)

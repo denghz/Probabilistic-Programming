@@ -136,3 +136,44 @@ pdfExp e (l,w) =
       return $ do
         g <- gs'
         return (Func [Variable "t"] (Apply (Integrate g) [Variable "t"]))
+
+pdfExp (If e1 e2 e3) (l,w) =
+  do
+    gs1 <- pdfBranch e1 e2 (l,w)
+    gs2 <- pdfBranch (Apply (Variable "~") [e1]) e2 (l,w)
+    return $ [Func [Variable "t"] (Apply (Variable "+") [Apply g1 [Variable "t"], Apply g2 [Variable "t"]]) | g1 <- gs1, g2 <- gs2]
+
+pdfBranch :: Expr -> Expr -> Env -> IO [Expr]
+pdfBranch e1 e2 (l,w) =
+  let fvE1 = freeVars e1 in
+    let fvE2 = freeVars e2 in
+  if not (any (`elem` fvE1) fvE2) then
+    do
+      e1s' <- pTrue e1 (l,w)
+      gs <- pdfExp e2 (l,w)
+      return $ [
+        Func [Variable "t"] (Apply (Variable "*") [e1', Apply g [Variable "t"]] ) | e1' <- e1s', g <- gs]
+  else do
+    gs <- pdfExp e2 (l,w)
+    return $ 
+      [Func [Variable "t"] 
+          (If 
+            (substitute (define empty_env "x" (Variable "t")) e1) 
+            (Apply g [Variable "t"]) 
+            (Number 0)) | g <- gs]
+ 
+pTrue :: Expr -> Env -> IO [Expr]
+pTrue (Apply (Variable "<") es) env =
+  let x = head es in let y = last es in
+    do
+      ps <- pdfExp (Apply (Variable "-") [x, y]) env
+      return $ map (\e -> IntegrateBound e Nothing (Just (Number 0))) ps
+
+pTrue (Apply (Variable ">") es) env =
+  do
+    es' <- pTrue (Apply (Variable "<") es) env
+    return $ [Apply (Variable "-") [Number 1, e'] | e' <- es']
+
+pTrue (Apply (Variable ">=") es) env = pTrue (Apply (Variable ">") es) env
+
+pTrue (Apply (Variable "<=") es) env = pTrue (Apply (Variable "<") es) env 
