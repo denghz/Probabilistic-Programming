@@ -369,7 +369,7 @@ nnDiff env e =
         t <- range env e
         Mk (\k ->
           do
-            b <- diffCheck (transfromExpPN e) vs
+            b <- diffCheck (transformExpToPN e) vs
             putStrLn $ "nnDiff result of "  <> show e <> " is " <> show b
             if b then k [t]
             else k []
@@ -386,7 +386,7 @@ nnDiff env e =
 nnTuple :: Environment Dist -> Expr -> M [Type]
 nnTuple env p@(Pair (p1,p2)) =
   let pList = flatPair p in
-  let eList = map transfromExpPN pList in
+  let eList = map transformExpToPN pList in
   let vars = freeVars p in
   let allDiff = all diffFunction pList in
   let isSquare = length vars == length pList in

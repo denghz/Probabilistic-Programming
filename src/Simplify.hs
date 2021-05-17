@@ -31,7 +31,7 @@ fullSimplify e@(Apply e1 es) =
   where
     mathSimplify e =
       do
-        let args = unwords $ transfromExpPN e
+        let args = unwords $ transformExpToPN e
         res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/simplify.py " <> args))
         let wordList = words (L8.unpack res)
         return $ readInfixExpr wordList

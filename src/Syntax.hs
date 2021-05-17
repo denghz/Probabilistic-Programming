@@ -34,6 +34,7 @@ data Expr =
   | Inverse Expr
   | Diff Expr
   | Integrate Expr
+  | Func [Expr] Expr
   | Empty
   deriving (Show,Eq)
 

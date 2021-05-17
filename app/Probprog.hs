@@ -230,6 +230,8 @@ init_env =
     pureprim "exp" (\[Real a] -> Real $ exp a),
     pureprim "log" (\[Real a] -> Real $ log a),
     pureprim "floor" (\[Real a] -> Real $ fromIntegral (floor a))]
+    -- pureprim "power" (\[Real a, Real b] -> Real $ a^b),
+    -- pureprim "abs" (\[Real a] -> Real $ abs(a))]
   where constant x v = (x, v)
         primitive x f = (x, Function x f)
         pureprim x f = primitive x (return . f)

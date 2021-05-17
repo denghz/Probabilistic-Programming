@@ -40,12 +40,6 @@ newIdent env = head $ filter (\x -> x `notElem` names env) allStrings
 
 
 
-
-
-
-
-
-
 isConst :: Environment Dist -> Expr -> Bool
 isConst _ (Number n) = True
 isConst env (Variable a) =
@@ -242,11 +236,11 @@ intervalToTuple interval =
 justLookupFunctionName :: String -> String
 justLookupFunctionName id = fromJust $ lookup id functionNameMap
 
-transfromExpPN :: Expr -> [String]
-transfromExpPN (Apply (Variable id) es) =
-  justLookupFunctionName id:concatMap transfromExpPN es
-transfromExpPN (Number n) = [show n]
-transfromExpPN (Variable id) = [id]
+transformExpToPN :: Expr -> [String]
+transformExpToPN (Apply (Variable id) es) =
+  justLookupFunctionName id:concatMap transformExpToPN es
+transformExpToPN (Number n) = [show n]
+transformExpToPN (Variable id) = [id]
 
 diffFunction :: Expr -> Bool
 diffFunction (Number _) = True
