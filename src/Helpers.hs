@@ -249,6 +249,7 @@ transformExpToPN (IntegrateBound e1 e2 me3 me4) =
   ++ maybe ["Infinity"] transformExpToPN me4
 
 transformExpToPN (Func e1 e2) = "Function":transformExpToPN e1 ++ transformExpToPN e2
+transformExpToPN (Apply f@(Func e1 e2) [e3]) = "Apply":transformExpToPN f ++ transformExpToPN e3
 
 diffFunction :: Expr -> Bool
 diffFunction (Number _) = True

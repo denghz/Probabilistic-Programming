@@ -6,8 +6,13 @@ from nnDiff import Func, sys, wl, wlexpr
 if __name__ == "__main__":
     
     file = open('src/checkRealInverse.nb', 'r').read()
-    exp = Func(sys.argv[1:])
-    #exp = Func(["Inverse", "Power", "x", "2", "x"])
+    args = sys.argv[1:]
+    exp = None
+    if args == []:
+        exp = Func(["Inverse", "Power", "x", "2", "x"])
+    else:
+        exp = args
+    #exp = 
     with WolframLanguageSession() as session:
         session.evaluate("Inv[zzz_] := 1/zzz")
         session.evaluate(file)

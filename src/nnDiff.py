@@ -8,7 +8,7 @@ import numbers
 import itertools
 
 functions1 = ("Sin", "Cos", "Tan", "Exp", "Log", "Minus", "Inv")
-functions2 = ("Plus", "Subtract", "Times", "Integrate", "D", "Function", "Power", "Inverse")
+functions2 = ("Plus", "Subtract", "Times", "Integrate", "D", "Function", "Power", "Inverse", "Apply")
 functions4 = ("IntegrateBound", )
 class Func:
     def __init__(self, pn):
@@ -30,6 +30,8 @@ class Func:
     def __str__(self):
         if self.arg1 == None and self.arg2 == None:
             return self.name
+        if self.name == "Apply":
+            return "(" + str(self.arg1) +"["+ str(self.arg2) +"]" +")"
         return self.name + "[" + str(self.arg1) + (", " + (str(self.arg2)) if self.arg2 is not None else "") + "]" 
 
 
