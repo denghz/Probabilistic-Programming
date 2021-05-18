@@ -5,7 +5,7 @@ module Transformer where
 import Syntax
 import Environment
 import Helpers
-import System.Process.Typed ( readProcessStderr_, shell )
+import System.Process.Typed ( readProcessStderr_, shell, runProcess )
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Char8 as L8
 import Control.Exception (throwIO)
@@ -217,3 +217,13 @@ checkMonotone e =
       res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/checkMonotone.py " <> args))
       return (read (L8.unpack res))
 
+
+
+-- call calcaulatePdf.py to calculate the pdf by Mathematica
+
+pdf :: Expr -> IO ()
+pdf e = 
+  do
+    pdf <- pdfExp e (empty_env, Number 1)
+    let argss = map transformExpToPN pdf
+    mapM_ (\args -> runProcess (shell ("python3 " <> "/home/dhz/probprog/src/checkMonotone.py " <> unwords args))) argss
