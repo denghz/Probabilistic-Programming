@@ -7,8 +7,9 @@ import wolframclient
 import numbers
 import itertools
 
-functions1 = ("Sin", "Cos", "Tan", "Exp", "Log", "Minus", "Inv")
-functions2 = ("Plus", "Subtract", "Times")
+functions1 = ("Sin", "Cos", "Tan", "Exp", "Log", "Minus", "Inv", "Inverse")
+functions2 = ("Plus", "Subtract", "Times", "Integrate", "D", "Function")
+functions4 = ("IntegrateBound")
 class Func:
     def __init__(self, pn):
         self.name = pn[0]
@@ -20,6 +21,12 @@ class Func:
         if self.name in functions2:
             self.arg1 = Func(pn)
             self.arg2 = Func(pn)
+        if self.name in functions4:
+            self.name = "Integrate"
+            self.arg1 = Func(pn)
+            self.arg2 = [Func(pn)]
+            self.arg2.append(Func(pn))
+            self.arg2.append(Func(pn))
     def __str__(self):
         if self.arg1 == None and self.arg2 == None:
             return self.name

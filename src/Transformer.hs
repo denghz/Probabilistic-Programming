@@ -22,7 +22,7 @@ pdfDist (Score e dist) (l,w) = pdfDist dist (l, Apply (Variable "*") [e,w])
 pdfDist (Let (Rand x d1) d2) (l,w) = do {f <- pdfDist d1 (l,Number 1.0); pdfDist d2 (define l x f, w)}
 pdfDist (PrimD _ "Normal" es) _ =
   let mu = head es in let sigma = last es in
-    return [Func [Variable "x"] (Apply (Variable "*") [
+    return [Func (Variable "x") (Apply (Variable "*") [
       Apply (Variable "inv")
         [Apply (Variable "*")
           [sigma, Apply (Variable "power")
@@ -38,7 +38,7 @@ pdfDist (PrimD _ "Normal" es) _ =
           ]]])]
 pdfDist (PrimD _ "Uniform" es) _ =
   let a = head es in let b = last es in
-    return [Func [Variable "x"]
+    return [Func (Variable "x")
       (If (Apply (Variable "<") [Variable "x", a]) (Number 0)
         (If (Apply (Variable ">") [Variable "x", b]) (Number 0)
           (Apply (Variable "inv") [Apply (Variable "-") [a,b]])))]
@@ -50,7 +50,7 @@ pdfExp (Variable x) (l,w) =
     return $ do
       g <- find l x
       if null (freeVars g) && (null (freeVars w) || freeVars w == [x]) then
-        return (Func [Variable "z"] (Apply (Variable "*") [substitute (define empty_env x (Variable "z")) w, Apply g [Variable "z"]]))
+        return (Func (Variable "z") (Apply (Variable "*") [substitute (define empty_env x (Variable "z")) w, Apply g [Variable "z"]]))
       else error "precondition doesn't match"
 
 pdfExp (Apply (Variable "+") [Number n, e]) (l,w)=
@@ -58,7 +58,7 @@ pdfExp (Apply (Variable "+") [Number n, e]) (l,w)=
       gs <- pdfExp e (l,w)
       return $ do
         g <- gs
-        return (Func [Variable "z"] (Apply g [Apply (Variable "-") [Variable "z", Number n]]))
+        return (Func (Variable "z") (Apply g [Apply (Variable "-") [Variable "z", Number n]]))
 
 pdfExp (Apply (Variable "+") [e, Number n]) (l,w) = pdfExp (Apply (Variable "+") [Number n, e]) (l,w)
 
@@ -68,7 +68,7 @@ pdfExp (Apply (Variable "*") [e, Number n]) (l,w) =
     gs <- pdfExp e (l,w)
     return $ do
       g <- gs
-      return (Func [Variable "z"]
+      return (Func (Variable "z")
                 (Apply (Variable "*")
                   [Apply (Variable "Inv") [if n < 0 then Number (-n) else Number n],
                     Apply g [Apply (Variable "*") [Variable "z",Apply (Variable "Inv") [Number n]]]]))
@@ -85,9 +85,9 @@ pdfExp (Apply f [e]) (l,w) =
           gs <- pdfExp e (l,w)
           return $ do
             g <- gs
-            return (Func [Variable "z"]
+            return (Func (Variable "z")
                     (Apply (Variable "*")
-                        [Apply (Diff (Inverse f)) [Variable "z"], Apply g [Apply (Inverse f) [Variable "z"]]]))
+                        [Diff (Apply (Inverse f) [Variable "z"]) (Variable "z"), Apply g [Apply (Inverse f) [Variable "z"]]]))
       else error "e is not diff and monotone and invertible"
   where
     checks f = return True --check invertible and diff and monotone (reduce[diff > 0 or diff < 0] == True)
@@ -102,7 +102,7 @@ pdfExp (Pair (x,y)) (l,w) =
         fs <- pdfExp x (l, toMul xw)
         gs <- pdfExp y (l, toMul yw)
         return
-          [Func [Variable "z"]
+          [Func (Variable "z")
             (Apply (Variable "*")
               [Apply f [Apply (Variable "fst") [Variable "z"]], Apply g [Apply (Variable "snd") [Variable "z"]]]) | f <- fs, g <- gs]
     else error "x and y are not independent"
@@ -121,7 +121,7 @@ pdfExp (Pair (Apply f [Variable x], e2)) (l,w) =
             g1 <- gs1
             g2 <- gs2
 
-            return (Func [Variable "z"] (
+            return (Func (Variable "z") (
               let a = Apply (Variable "fst") [Variable "z"] in
               let b  = Apply (Variable "snd") [Variable "z"] in
               Apply (Variable "*") [Apply g1 [a], substitute (define empty_env "zzz" a) (Apply g2 [b])]))
@@ -131,17 +131,19 @@ pdfExp (Pair (Apply f [Variable x], e2)) (l,w) =
 pdfExp e (l,w) =
     do
       let xs = freeVars e
-      gs <- mapM (\x -> pdfExp (Pair (Variable x,e)) (l,w)) (freeVars e ++ concatMap freeVars (concatMap (find l) xs))
+      let xs' = xs ++ concatMap freeVars (concatMap (find l) xs)
+      let vs = map Variable xs'
+      gs <- mapM (\x -> pdfExp (Pair (Variable x,e)) (l,w)) xs'
       let gs' = concat gs
       return $ do
-        g <- gs'
-        return (Func [Variable "t"] (Apply (Integrate g) [Variable "t"]))
+        (g,v) <- zip gs' vs
+        return (Func (Variable "t") (Apply (Integrate g v) [Variable "t"]))
 
 pdfExp (If e1 e2 e3) (l,w) =
   do
     gs1 <- pdfBranch e1 e2 (l,w)
     gs2 <- pdfBranch (Apply (Variable "~") [e1]) e2 (l,w)
-    return $ [Func [Variable "t"] (Apply (Variable "+") [Apply g1 [Variable "t"], Apply g2 [Variable "t"]]) | g1 <- gs1, g2 <- gs2]
+    return $ [Func (Variable "t") (Apply (Variable "+") [Apply g1 [Variable "t"], Apply g2 [Variable "t"]]) | g1 <- gs1, g2 <- gs2]
 
 pdfBranch :: Expr -> Expr -> Env -> IO [Expr]
 pdfBranch e1 e2 (l,w) =
@@ -152,11 +154,11 @@ pdfBranch e1 e2 (l,w) =
       e1s' <- pTrue e1 (l,w)
       gs <- pdfExp e2 (l,w)
       return $ [
-        Func [Variable "t"] (Apply (Variable "*") [e1', Apply g [Variable "t"]] ) | e1' <- e1s', g <- gs]
+        Func (Variable "t") (Apply (Variable "*") [e1', Apply g [Variable "t"]] ) | e1' <- e1s', g <- gs]
   else do
     gs <- pdfExp e2 (l,w)
     return $ 
-      [Func [Variable "t"] 
+      [Func (Variable "t") 
           (If 
             (substitute (define empty_env "x" (Variable "t")) e1) 
             (Apply g [Variable "t"]) 
@@ -167,7 +169,7 @@ pTrue (Apply (Variable "<") es) env =
   let x = head es in let y = last es in
     do
       ps <- pdfExp (Apply (Variable "-") [x, y]) env
-      return $ map (\e -> IntegrateBound e Nothing (Just (Number 0))) ps
+      return $ map (\e -> IntegrateBound e (Variable "z") Nothing (Just (Number 0))) ps
 
 pTrue (Apply (Variable ">") es) env =
   do

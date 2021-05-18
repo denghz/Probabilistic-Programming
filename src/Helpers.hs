@@ -241,6 +241,14 @@ transformExpToPN (Apply (Variable id) es) =
   justLookupFunctionName id:concatMap transformExpToPN es
 transformExpToPN (Number n) = [show n]
 transformExpToPN (Variable id) = [id]
+transformExpToPN (Diff e1 e2) = "D":transformExpToPN e1 ++ transformExpToPN e2
+transformExpToPN (Inverse e) = "Inverse":transformExpToPN e
+transformExpToPN (Integrate e1 e2) = "Integrate":transformExpToPN e1 ++ transformExpToPN e2
+transformExpToPN (IntegrateBound e1 e2 me3 me4) =
+  "IntegrateBound":transformExpToPN e1 ++ transformExpToPN e2 ++ maybe ["-Infinity"] transformExpToPN me3
+  ++ maybe ["Infinity"] transformExpToPN me4
+
+transformExpToPN (Func e1 e2) = "Function":transformExpToPN e1 ++ transformExpToPN e2
 
 diffFunction :: Expr -> Bool
 diffFunction (Number _) = True
