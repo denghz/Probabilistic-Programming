@@ -9,7 +9,7 @@ import itertools
 
 functions1 = ("Sin", "Cos", "Tan", "Exp", "Log", "Minus", "Inv")
 functions2 = ("Plus", "Subtract", "Times", "Integrate", "D", "Function", "Power", "Inverse")
-functions4 = ("IntegrateBound")
+functions4 = ("IntegrateBound", )
 class Func:
     def __init__(self, pn):
         self.name = pn[0]
