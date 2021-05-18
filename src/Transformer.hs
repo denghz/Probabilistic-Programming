@@ -101,22 +101,7 @@ pdfExp (Apply f [e@(Variable n)]) (l,w) =
         b2 <- checkInverse f
         b3 <- checkMonotone f
         return $ b1 && b2 && b3--check invertible and diff and monotone (reduce[diff > 0 or diff < 0] == True)
-
-pdfExp (Pair (x,y)) (l,w) =
-    let freeX = freeVars x in let freeY = freeVars y in
-    if not (any (`elem` freeX) freeY) then
-      let exprs = unrollMul w in
-        let xw = filter ((not . null) . filter (`elem` freeX) . freeVars) exprs in
-        let yw = filter ((not . null) . filter (`elem` freeY) . freeVars) exprs in
-      do
-        fs <- pdfExp x (l, toMul xw)
-        gs <- pdfExp y (l, toMul yw)
-        return
-          [Func (Variable "z")
-            (Apply (Variable "*")
-              [Apply f [Apply (Variable "fst") [Variable "z"]], Apply g [Apply (Variable "snd") [Variable "z"]]]) | f <- fs, g <- gs]
-    else error "x and y are not independent"
-
+        
 pdfExp (Pair (Apply f [Variable x], e2)) (l,w) =
   do
     t <- check f
@@ -137,18 +122,26 @@ pdfExp (Pair (Apply f [Variable x], e2)) (l,w) =
               let b  = Apply (Variable "snd") [Variable "z"] in
               Apply (Variable "*") [Apply g1 [a],  Apply (Apply g2 [a]) [b]]))
 
-    where check f = checkDiff f -- check invertible
+    where check f = checkInverse f -- check invertible
 
-pdfExp e (l,w) =
-    do
-      let xs = freeVars e
-      let xs' = xs ++ concatMap freeVars (concatMap (find l) xs)
-      let vs = map Variable xs'
-      gs <- mapM (\x -> pdfExp (Pair (Variable x,e)) (l,w)) xs'
-      let gs' = concat gs
-      return $ do
-        (g,v) <- zip gs' vs
-        return (Func (Variable "t") (Apply (Integrate g v) [Variable "t"]))
+pdfExp (Pair (x,y)) (l,w) =
+    let freeX = freeVars x in let freeY = freeVars y in
+    if not (any (`elem` freeX) freeY) then
+      let exprs = unrollMul w in
+        let xw = filter ((not . null) . filter (`elem` freeX) . freeVars) exprs in
+        let yw = filter ((not . null) . filter (`elem` freeY) . freeVars) exprs in
+      do
+        fs <- pdfExp x (l, toMul xw)
+        gs <- pdfExp y (l, toMul yw)
+        return
+          [Func (Variable "z")
+            (Apply (Variable "*")
+              [Apply f [Apply (Variable "fst") [Variable "z"]], Apply g [Apply (Variable "snd") [Variable "z"]]]) | f <- fs, g <- gs]
+    else error "x and y are not independent"
+
+
+
+
 
 pdfExp (If e1 e2 e3) (l,w) =
   do
