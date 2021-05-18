@@ -5,6 +5,11 @@ module Transformer where
 import Syntax
 import Environment
 import Helpers
+import System.Process.Typed ( readProcessStderr_, shell )
+import qualified Data.ByteString.Lazy as L
+import qualified Data.ByteString.Lazy.Char8 as L8
+import Control.Exception (throwIO)
+import qualified Data.List as List
 
 type Env = (Environment [Expr], Expr)
 unrollMul :: Expr -> [Expr]
@@ -75,7 +80,7 @@ pdfExp (Apply (Variable "*") [e, Number n]) (l,w) =
 
 pdfExp (Apply (Variable "*") [Number n , e]) (l,w) = pdfExp (Apply (Variable "*") [e, Number n]) (l,w)
 
-pdfExp (Apply f [e]) (l,w) =
+pdfExp (Apply f [e@(Variable n)]) (l,w) =
   if not $ diffFunction e then error "e must be differentiable"
   else
     do
@@ -87,10 +92,15 @@ pdfExp (Apply f [e]) (l,w) =
             g <- gs
             return (Func (Variable "z")
                     (Apply (Variable "*")
-                        [Diff (Apply (Inverse f) [Variable "z"]) (Variable "z"), Apply g [Apply (Inverse f) [Variable "z"]]]))
+                        [Diff (Apply (Inverse f e) [Variable "z"]) (Variable "z"), Apply g [Apply (Inverse f e) [Variable "z"]]]))
       else error "e is not diff and monotone and invertible"
   where
-    checks f = return True --check invertible and diff and monotone (reduce[diff > 0 or diff < 0] == True)
+    checks f = 
+      do
+        b1 <- checkDiff f
+        b2 <- checkInverse f
+        b3 <- checkMonotone f
+        return $ b1 && b2 && b3--check invertible and diff and monotone (reduce[diff > 0 or diff < 0] == True)
 
 pdfExp (Pair (x,y)) (l,w) =
     let freeX = freeVars x in let freeY = freeVars y in
@@ -113,9 +123,10 @@ pdfExp (Pair (Apply f [Variable x], e2)) (l,w) =
     if x `elem` freeVars e2 || not t then error "e1 and e2 are not independent"
     else do
        gs1 <- pdfExp(Apply f [Variable x]) (l,Number 1)
-       gs2 <- pdfExp
-              (substitute (define empty_env x (Variable "zzz")) e2)
-              (l,substitute (define empty_env x (Variable "zzz")) w)
+       gs2' <- pdfExp
+                (substitute (define empty_env x (Apply (Inverse f (Variable x)) [Variable "a"])) e2)
+                (l,substitute (define empty_env x (Apply (Inverse f (Variable x)) [Variable "a"])) w)
+       let gs2 = map (Func (Variable "a")) gs2'
        return $
           do
             g1 <- gs1
@@ -124,9 +135,9 @@ pdfExp (Pair (Apply f [Variable x], e2)) (l,w) =
             return (Func (Variable "z") (
               let a = Apply (Variable "fst") [Variable "z"] in
               let b  = Apply (Variable "snd") [Variable "z"] in
-              Apply (Variable "*") [Apply g1 [a], substitute (define empty_env "zzz" a) (Apply g2 [b])]))
+              Apply (Variable "*") [Apply g1 [a],  Apply (Apply g2 [a]) [b]]))
 
-    where check f = return True -- check invertible
+    where check f = checkDiff f -- check invertible
 
 pdfExp e (l,w) =
     do
@@ -157,13 +168,13 @@ pdfBranch e1 e2 (l,w) =
         Func (Variable "t") (Apply (Variable "*") [e1', Apply g [Variable "t"]] ) | e1' <- e1s', g <- gs]
   else do
     gs <- pdfExp e2 (l,w)
-    return $ 
-      [Func (Variable "t") 
-          (If 
-            (substitute (define empty_env "x" (Variable "t")) e1) 
-            (Apply g [Variable "t"]) 
+    return $
+      [Func (Variable "t")
+          (If
+            (substitute (define empty_env "x" (Variable "t")) e1)
+            (Apply g [Variable "t"])
             (Number 0)) | g <- gs]
- 
+
 pTrue :: Expr -> Env -> IO [Expr]
 pTrue (Apply (Variable "<") es) env =
   let x = head es in let y = last es in
@@ -178,4 +189,31 @@ pTrue (Apply (Variable ">") es) env =
 
 pTrue (Apply (Variable ">=") es) env = pTrue (Apply (Variable ">") es) env
 
-pTrue (Apply (Variable "<=") es) env = pTrue (Apply (Variable "<") es) env 
+pTrue (Apply (Variable "<=") es) env = pTrue (Apply (Variable "<") es) env
+
+
+checkDiff :: Expr -> IO Bool
+checkDiff e = 
+  let expList = transformExpToPN (Diff (Apply e [Variable "z"]) (Variable "z")) in
+  let args = unwords expList in
+    do
+      res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/checkDiff.py " <> args))
+      return (read (L8.unpack res))
+
+
+checkInverse :: Expr -> IO Bool
+checkInverse e = 
+  let expList = transformExpToPN e in
+  let args = unwords expList in
+    do
+      res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/checkRealInverse.py " <> args))
+      return (read (L8.unpack res))
+
+checkMonotone :: Expr -> IO Bool
+checkMonotone e = 
+  let expList = transformExpToPN (Diff (Apply e [Variable "z"]) (Variable "z")) in
+  let args = unwords expList in
+    do
+      res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/checkMonotone.py " <> args))
+      return (read (L8.unpack res))
+

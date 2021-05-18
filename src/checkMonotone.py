@@ -6,13 +6,13 @@ from nnDiff import Func, sys
 
 if __name__ == "__main__":
     
-    file = open('src/checkDiff.nb', 'r').read()
+    
     
     exp = Func(sys.argv[1:])
-    # exp = Func(["D", "x", "x"])
+    #exp = Func(["D", "x", "x"])
     with WolframLanguageSession() as session:
         session.evaluate("Inv[zzz_] := 1/zzz")
-        session.evaluate("f[" + str(exp.arg2) + "_] = " + str(exp.arg1))
-        res = session.evaluate(file)
+        d = "D["+ str(exp.arg1) + ", "+ str(exp.arg1) + "]"
+        res = session.evaluate("Reduce[" + d + "<= 0 || " + d + " >= 0 ]")
         print(res, file=sys.stderr)
 

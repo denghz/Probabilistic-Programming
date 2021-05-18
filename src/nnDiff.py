@@ -7,8 +7,8 @@ import wolframclient
 import numbers
 import itertools
 
-functions1 = ("Sin", "Cos", "Tan", "Exp", "Log", "Minus", "Inv", "Inverse")
-functions2 = ("Plus", "Subtract", "Times", "Integrate", "D", "Function")
+functions1 = ("Sin", "Cos", "Tan", "Exp", "Log", "Minus", "Inv")
+functions2 = ("Plus", "Subtract", "Times", "Integrate", "D", "Function", "Power", "Inverse")
 functions4 = ("IntegrateBound")
 class Func:
     def __init__(self, pn):

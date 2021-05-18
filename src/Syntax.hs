@@ -31,7 +31,7 @@ data Expr =
   | Apply Expr [Expr]
   | Loop [(Ident, Expr)] Expr Expr [(Ident, Expr)]
   | Pair (Expr, Expr)
-  | Inverse Expr
+  | Inverse Expr Expr
   | Diff Expr Expr
   | Integrate Expr Expr
   | IntegrateBound Expr Expr (Maybe Expr) (Maybe Expr)

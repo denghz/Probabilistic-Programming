@@ -242,7 +242,7 @@ transformExpToPN (Apply (Variable id) es) =
 transformExpToPN (Number n) = [show n]
 transformExpToPN (Variable id) = [id]
 transformExpToPN (Diff e1 e2) = "D":transformExpToPN e1 ++ transformExpToPN e2
-transformExpToPN (Inverse e) = "Inverse":transformExpToPN e
+transformExpToPN (Inverse e1 e2) = "Inverse":transformExpToPN e1 ++ transformExpToPN e2
 transformExpToPN (Integrate e1 e2) = "Integrate":transformExpToPN e1 ++ transformExpToPN e2
 transformExpToPN (IntegrateBound e1 e2 me3 me4) =
   "IntegrateBound":transformExpToPN e1 ++ transformExpToPN e2 ++ maybe ["-Infinity"] transformExpToPN me3
