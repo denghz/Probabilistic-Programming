@@ -30,8 +30,12 @@ substitute env (Variable v) =
     Nothing -> Variable v
     Just Empty -> Variable v
     Just e -> e
+substitute env (Inverse e1 e2) = Inverse (substitute env e1) e2
+substitute env (Diff e1 e2) = Diff (substitute env e1) e2
+substitute env (Integrate e1 e2) = Integrate (substitute env e1) e2
+substitute env (IntegrateBound e1 e2 me3 me4) = IntegrateBound (substitute env e1) e2 me3 me4
+substitute env (Func e1@(Variable x) e2) = Func e1 (substitute (define env x (Variable x)) e2)
 
-substitute env e = e
 
 newIdent :: Environment a -> Ident
 newIdent env = head $ filter (\x -> x `notElem` names env) allStrings
