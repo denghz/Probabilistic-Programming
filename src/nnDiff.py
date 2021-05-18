@@ -22,16 +22,18 @@ class Func:
             self.arg1 = Func(pn)
             self.arg2 = Func(pn)
         if self.name in functions4:
-            self.name = "Integrate"
+            self.name = "IntegrateBound"
             self.arg1 = Func(pn)
-            self.arg2 = [Func(pn)]
-            self.arg2.append(Func(pn))
-            self.arg2.append(Func(pn))
+            self.arg2 = [str(Func(pn))]
+            self.arg2.append(float(str(Func(pn))))
+            self.arg2.append(float(str(Func(pn))))
     def __str__(self):
         if self.arg1 == None and self.arg2 == None:
             return self.name
         if self.name == "Apply":
             return "(" + str(self.arg1) +"["+ str(self.arg2) +"]" +")"
+        if self.name == "IntegrateBound":
+            return "Integrate[" + str(self.arg1) + ",{" + str(self.arg2[0]) + "," +  str(self.arg2[1]) + "," + str(self.arg2[2])+ "}]" 
         return self.name + "[" + str(self.arg1) + (", " + (str(self.arg2)) if self.arg2 is not None else "") + "]" 
 
 
