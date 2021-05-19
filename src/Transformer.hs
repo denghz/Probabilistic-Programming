@@ -89,7 +89,9 @@ pdfExp e'@(Apply f [e]) (l,w) =
       res <- checks f
       if res then
         do
+          print e
           gs <- pdfExp e (l,w)
+          print gs
           return $ do
             g <- gs
             return (Func (Variable "z")
@@ -131,6 +133,9 @@ pdfExp (If e1 e2 e3) (l,w) =
     gs1 <- pdfBranch e1 e2 (l,w)
     gs2 <- pdfBranch (Apply (Variable "~") [e1]) e2 (l,w)
     return $ [Func (Variable "t") (Apply (Variable "+") [Apply g1 [Variable "t"], Apply g2 [Variable "t"]]) | g1 <- gs1, g2 <- gs2]
+
+pdfExp p@(Pair (x,y)) env = pdfExpPair p env
+pdfExp e env = pdfExp' e env
 
 pdfExpPair :: Expr -> (Environment [Expr], Expr) -> IO [Expr]
 pdfExpPair p@(Pair (x,y)) (l,w) =
@@ -211,7 +216,7 @@ checkInverse e =
   let expList = transformExpToPN e in
   let args = unwords expList in
     do
-      res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/checkRealInverse.py " <> args))
+      res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/checkInvertible.py " <> args))
       return (read (L8.unpack res))
 
 checkMonotone :: Expr -> IO Bool
@@ -230,5 +235,6 @@ pdf :: Dist -> IO ()
 pdf d = 
   do
     pdf <- pdfDist d (empty_env, Number 1)
+    print pdf
     let argss = map transformExpToPN pdf
-    mapM_ (\args -> runProcess (shell ("python3 " <> "/home/dhz/probprog/src/checkMonotone.py " <> unwords args))) argss
+    mapM_ (\args -> runProcess (shell ("python3 " <> "/home/dhz/probprog/src/calculatePdf.py " <> unwords args))) argss

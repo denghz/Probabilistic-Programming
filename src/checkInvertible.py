@@ -11,7 +11,7 @@ if __name__ == "__main__":
     if args == []:
         exp = Func(["Inverse", "Power", "x", "2", "x"])
     else:
-        exp = args
+        exp = Func(args)
     #exp = 
     with WolframLanguageSession() as session:
         session.evaluate("Inv[zzz_] := 1/zzz")

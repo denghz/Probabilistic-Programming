@@ -255,15 +255,16 @@ obey (Calculate (dist, t)) env =
   do
     d <- simplify env dist
     b <- ac d t
-    return (d,b)
-    -- Mk (\k ->
-    --   do
-    --     pdf d
-    --     k (d,b)
-    --   )
+    -- return (d,b)
+    Mk (\k ->
+      do
+        putStrLn ("ac "<> show b)
+        pdf d
+        k (d,b)
+      )
     
   )
-  (\(d,b) -> do putStrLn ("ac "<> show b);return env)
+  (\_ -> return env)
 
 obey (Evaluate exp) env =
   applyK (eval env exp) (\v -> do putStrLn $ print_value v;return env)

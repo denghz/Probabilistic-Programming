@@ -12,10 +12,11 @@ if __name__ == "__main__":
     if args == []:
         exp = Func(["D", "x", "x"])
     else:
-        exp = args
+        exp = Func(args)
     with WolframLanguageSession() as session:
         session.evaluate("Inv[zzz_] := 1/zzz")
         session.evaluate("f[" + str(exp.arg2) + "_] = " + str(exp.arg1))
+        
         res = session.evaluate(file)
         print(res, file=sys.stderr)
 

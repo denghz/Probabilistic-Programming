@@ -9,6 +9,6 @@ if __name__ == "__main__":
     #exp = Func(["D", "x", "x"])
     with WolframLanguageSession() as session:
         session.evaluate("Inv[zzz_] := 1/zzz")
-        res = session.evaluate(str(exp))
+        res = session.evaluate(str(exp))        
         print(res)
 

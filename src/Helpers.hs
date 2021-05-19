@@ -96,7 +96,7 @@ isSingleValue _ = False
 
 functionNameMap :: [(String,String)]
 functionNameMap =  [("sin", "Sin"), ("cos", "Cos"), ("tan", "Tan"), ("exp", "Exp"), ("log", "Log"), ("+", "Plus"),
-                ("-", "Subtract"), ("*", "Times"), ("~", "Minus"), ("inv", "Inv")]
+                ("-", "Subtract"), ("*", "Times"), ("~", "Minus"), ("inv", "Inv"), ("power", "Power")]
 
 functions1 :: [[Char]]
 functions1 = ["Sin", "Cos", "Tan", "Exp", "Log", "Minus", "Inv"]

@@ -1,0 +1,1 @@
+let x ~ Normal(0,1) in return x in L;
