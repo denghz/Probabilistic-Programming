@@ -51,12 +51,14 @@ pdfDist (PrimD _ "Uniform" es) _ =
 pdfDist d _ = error $ show d <> " doesn't have a pdf"
 
 pdfExp :: Expr -> Env -> IO [Expr]
-pdfExp (Variable x) (l,w) =
-    return $ do
-      g <- find l x
-      if null (freeVars g) && (null (freeVars w) || freeVars w == [x]) then
-        return (Func (Variable "z") (Apply (Variable "*") [substitute (define empty_env x (Variable "z")) w, Apply g [Variable "z"]]))
-      else error "precondition doesn't match"
+pdfExp e@(Variable x) (l,w) =
+  do
+    let t = (do
+          g <- find l x
+          if null (freeVars g) && (null (freeVars w) || freeVars w == [x]) then
+            return (Func (Variable "z") (Apply (Variable "*") [substitute (define   empty_env x (Variable "z")) w, Apply g [Variable "z"]]))
+          else [])
+    if null t then pdfExp' e (l,w) else return t
 
 pdfExp (Apply (Variable "+") [Number n, e]) (l,w)=
     do
@@ -67,8 +69,8 @@ pdfExp (Apply (Variable "+") [Number n, e]) (l,w)=
 
 pdfExp (Apply (Variable "+") [e, Number n]) (l,w) = pdfExp (Apply (Variable "+") [Number n, e]) (l,w)
 
-pdfExp (Apply (Variable "*") [e, Number n]) (l,w) =
-  if n == 0 then error "precondition doesn't match" else
+pdfExp e'@(Apply (Variable "*") [e, Number n]) (l,w) =
+  if n == 0 then pdfExp' e' (l,w) else
   do
     gs <- pdfExp e (l,w)
     return $ do
@@ -80,8 +82,8 @@ pdfExp (Apply (Variable "*") [e, Number n]) (l,w) =
 
 pdfExp (Apply (Variable "*") [Number n , e]) (l,w) = pdfExp (Apply (Variable "*") [e, Number n]) (l,w)
 
-pdfExp (Apply f [e@(Variable n)]) (l,w) =
-  if not $ diffFunction e then error "e must be differentiable"
+pdfExp e'@(Apply f [e]) (l,w) =
+  if not $ diffFunction e then pdfExp' e' (l,w)
   else
     do
       res <- checks f
@@ -93,7 +95,7 @@ pdfExp (Apply f [e@(Variable n)]) (l,w) =
             return (Func (Variable "z")
                     (Apply (Variable "*")
                         [Diff (Apply (Inverse f e) [Variable "z"]) (Variable "z"), Apply g [Apply (Inverse f e) [Variable "z"]]]))
-      else error "e is not diff and monotone and invertible"
+      else pdfExp' e' (l,w)
   where
     checks f = 
       do
@@ -102,10 +104,10 @@ pdfExp (Apply f [e@(Variable n)]) (l,w) =
         b3 <- checkMonotone f
         return $ b1 && b2 && b3--check invertible and diff and monotone (reduce[diff > 0 or diff < 0] == True)
         
-pdfExp (Pair (Apply f [Variable x], e2)) (l,w) =
+pdfExp p@(Pair (Apply f [Variable x], e2)) (l,w) =
   do
     t <- check f
-    if x `elem` freeVars e2 || not t then error "e1 and e2 are not independent"
+    if x `elem` freeVars e2 || not t then pdfExpPair p (l,w)
     else do
        gs1 <- pdfExp(Apply f [Variable x]) (l,Number 1)
        gs2' <- pdfExp
@@ -123,8 +125,15 @@ pdfExp (Pair (Apply f [Variable x], e2)) (l,w) =
               Apply (Variable "*") [Apply g1 [a],  Apply (Apply g2 [a]) [b]]))
 
     where check f = checkInverse f -- check invertible
+    
+pdfExp (If e1 e2 e3) (l,w) =
+  do
+    gs1 <- pdfBranch e1 e2 (l,w)
+    gs2 <- pdfBranch (Apply (Variable "~") [e1]) e2 (l,w)
+    return $ [Func (Variable "t") (Apply (Variable "+") [Apply g1 [Variable "t"], Apply g2 [Variable "t"]]) | g1 <- gs1, g2 <- gs2]
 
-pdfExp (Pair (x,y)) (l,w) =
+pdfExpPair :: Expr -> (Environment [Expr], Expr) -> IO [Expr]
+pdfExpPair p@(Pair (x,y)) (l,w) =
     let freeX = freeVars x in let freeY = freeVars y in
     if not (any (`elem` freeX) freeY) then
       let exprs = unrollMul w in
@@ -137,17 +146,20 @@ pdfExp (Pair (x,y)) (l,w) =
           [Func (Variable "z")
             (Apply (Variable "*")
               [Apply f [Apply (Variable "fst") [Variable "z"]], Apply g [Apply (Variable "snd") [Variable "z"]]]) | f <- fs, g <- gs]
-    else error "x and y are not independent"
+    else pdfExp' p (l,w)
 
 
-
-
-
-pdfExp (If e1 e2 e3) (l,w) =
-  do
-    gs1 <- pdfBranch e1 e2 (l,w)
-    gs2 <- pdfBranch (Apply (Variable "~") [e1]) e2 (l,w)
-    return $ [Func (Variable "t") (Apply (Variable "+") [Apply g1 [Variable "t"], Apply g2 [Variable "t"]]) | g1 <- gs1, g2 <- gs2]
+pdfExp' :: Expr -> (Environment [Expr], Expr) -> IO [Expr]
+pdfExp' e (l,w) =
+    do
+      let xs = freeVars e
+      let xs' = xs ++ concatMap freeVars (concatMap (find l) xs)
+      let vs = map Variable xs'
+      gs <- mapM (\x -> pdfExp (Pair (Variable x,e)) (l,w)) xs'
+      let gs' = concat gs
+      return $ do
+        (g,v) <- zip gs' vs
+        return (Func (Variable "t") (Apply (Integrate g v) [Variable "t"]))
 
 pdfBranch :: Expr -> Expr -> Env -> IO [Expr]
 pdfBranch e1 e2 (l,w) =
@@ -214,9 +226,9 @@ checkMonotone e =
 
 -- call calcaulatePdf.py to calculate the pdf by Mathematica
 
-pdf :: Expr -> IO ()
-pdf e = 
+pdf :: Dist -> IO ()
+pdf d = 
   do
-    pdf <- pdfExp e (empty_env, Number 1)
+    pdf <- pdfDist d (empty_env, Number 1)
     let argss = map transformExpToPN pdf
     mapM_ (\args -> runProcess (shell ("python3 " <> "/home/dhz/probprog/src/checkMonotone.py " <> unwords args))) argss

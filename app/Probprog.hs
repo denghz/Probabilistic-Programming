@@ -9,7 +9,7 @@ import Log
 import Helpers ( checkType, newIdent, substitute, freeVars )
 import Simplify
 -- An environment is a map from identifiers to values
-
+import Transformer(pdf)
 notDeterVars :: Env -> Expr -> [Ident]
 notDeterVars env e =
   let vs = freeVars e in
@@ -256,6 +256,12 @@ obey (Calculate (dist, t)) env =
     d <- simplify env dist
     b <- ac d t
     return (d,b)
+    -- Mk (\k ->
+    --   do
+    --     pdf d
+    --     k (d,b)
+    --   )
+    
   )
   (\(d,b) -> do putStrLn ("ac "<> show b);return env)
 
