@@ -33,7 +33,7 @@ import Control.Exception (throwIO)
 import qualified Data.List as List
 import Helpers
 
-import PrintBTree
+import PrintBTree ( leafNode, printt, Btree(..) )
 
 -- All builtin function should be considered
 
@@ -391,10 +391,10 @@ nnTuple env p@(Pair (p1,p2)) =
   let eList = map transformExpToPN pList in
   let vars = freeVars p in
   let allDiff = all diffFunction pList in
-  let isSquare = length vars == length pList in
+  let expand = length vars < length pList in
   do
     xs <- mapM (fmap getRange . range env . Variable) vars
-    if not (all isUC xs) || not allDiff || not isSquare then
+    if not (all isUC xs) || not allDiff || expand then
       log_ ("try NN-Tuple " <> show p <> " domains are not all uncount, or not differentiable, or map to a sub space") $ return []
     else
       let xs' = map (toList.getUC) xs in
