@@ -10,7 +10,7 @@ import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Char8 as L8
 import Control.Exception (throwIO)
 import qualified Data.List as List
-
+import Data.Maybe(isNothing)
 type Env = (Environment [Expr], Expr)
 unrollMul :: Expr -> [Expr]
 unrollMul (Apply (Variable "*") [e1,e2]) =
@@ -228,8 +228,27 @@ checkMonotone e =
       return (read (L8.unpack res))
 
 
+probProgTrans :: (Dist, Expr) -> Dist
+probProgTrans (Return e, e1) = Return e1
+probProgTrans (Score e1 d1, e3) = 
+  let u = freeVars e1 in let v = freeVars e3 in
+    if any (`elem` v) u then Score e1 (probProgTrans (d1,e3))
+    else probProgTrans (d1,e3)
+probProgTrans (Let (Rand x d) d1, e3) = 
+   let u = freeVarsD d empty_env in let v = freeVars e3 in
+     if any (`elem` v) u then Let (Rand x d) (probProgTrans (d1,e3))
+      else probProgTrans (d1,e3)
+probProgTrans (d,_) = d
 
--- call calcaulatePdf.py to calculate the pdf by Mathematica
+
+freeVarsD :: Dist -> Environment Dist -> [Ident]
+freeVarsD (Return e) env = filter (isNothing . maybe_find env) (freeVars e)
+freeVarsD (Let (Rand x d1) d2) env = freeVarsD d2 (define env x d1)
+freeVarsD (Score e1 d1) env =  freeVarsD (Return e1) env ++ freeVarsD d1 env
+freeVarsD (PrimD _ _ es) env =  concatMap (flip freeVarsD env . Return) es
+
+
+
 
 pdf :: Dist -> IO ()
 pdf d = 
