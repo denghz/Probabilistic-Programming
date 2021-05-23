@@ -184,6 +184,18 @@ lift2CCtoC op (B r1 r2) (C r3) = B (r1 `op` r3) (r1 `op` r2)
 lift2CCtoC op (B r1 r2) (UC r3) = UC ((r1 `op` r3) `union` (r2 `op` r3))
 lift2CCtoC op (B r1 r2) (B r3 r4) = B (r1 `op` r3) (unions [r1 `op` r3, r1 `op` r4, r2 `op` r4])
 
+
+lift2Id :: (IntervalSet Double -> IntervalSet Double -> IntervalSet Double) -> Range -> Range -> Range
+lift2Id op (C r1) (C r2) = C (r1 `op` r2)
+lift2Id op (C r1) (UC r2) = B r1 r2
+lift2Id op (C r1) (B r2 r3) = B (r1 `op` r2) r3
+lift2Id op (UC r1) (C r2) = B r2 r1
+lift2Id op (UC r1) (UC r2) = UC (r1 `op` r2)
+lift2Id op (UC r1) (B r2 r3) = B r2 (r1 `op` r3)
+lift2Id op (B r1 r2) (C r3) = B (r1 `op` r3) r2
+lift2Id op (B r1 r2) (UC r3) = B r1  (r2 `op` r3)
+lift2Id op (B r1 r2) (B r3 r4) = B (r1 `op` r3) (r2 `op` r4)
+
 checkType :: Type -> Type -> Bool
 checkType (P t1 t2) (P t3 t4) = checkType t1 t3 && checkType t2 t4
 checkType (T r1) (T r2) = checkRange r1 r2
@@ -203,7 +215,7 @@ isCountType (P r1 r2) = isCountType r1 && isCountType r2
 isCountType _ = False
 
 unionType :: Type -> Type -> Type
-unionType = lift2Type (lift2CCtoC Data.IntervalSet.union)
+unionType = lift2Type (lift2Id Data.IntervalSet.union)
 
 lift2Type :: (Range -> Range -> Range) -> Type -> Type -> Type
 lift2Type f (T r1) (T r2) = T (f r1 r2)
