@@ -425,7 +425,7 @@ failnn e = log_ (show e <> " is not nn'") $ return ([], leafNode "")
 
 
 nn :: Environment Dist -> Expr -> M [Type]
-nn env e = 
+nn env e =
   do
     (t, tr) <- nn' env e
     Mk (\k ->
@@ -460,11 +460,9 @@ nn' env e@(If e1 e2 e3) =
       do
         let res = do
              t1 <- mt1
-             t2 <- mt2
-             if checkType t1 t2 then return (unionType t1 t2) else []
-        if not (null res) then
-          log_ ("apply NN-IF on " <> show e) $ return (res, Node ("NN-If on " <> show e) tr1 tr2)
-        else failnn e
+             unionType t1 <$> mt2
+        log_ ("apply NN-IF on " <> show e) $ return (res, Node ("NN-If on "<> show e) tr1 tr2)
+        
 
 nn' env e@(Apply (Variable "+") xs) =
   if length xs /= 2 then error (show xs <> " + takes two arguments")
