@@ -1,6 +1,3 @@
-let x ~ Uniform(0,1) in return (sin(x*x)) in L;
-let x ~ Uniform(0,1) in return (sin(x)*sin(x) + cos(x)*cos(x)) in L;
+
 let x ~ Uniform(0,1) in let y ~ Uniform(0,1) in return (x+y,x-y) in (L,L);
 
-let x ~ Uniform(0,1) in let y ~ Uniform(0,1) in return (x+y,x) in (L,L);
-let x ~ Uniform(0,1) in let y ~ Uniform(0,1) in return (y,x) in (L,L);

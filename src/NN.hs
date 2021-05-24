@@ -383,7 +383,10 @@ nnDiff env e =
         let vsStr = vsToListStr vs
         let args = unwords $ expStr <> ["\"||\""] <> vsStr
         res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/nnDiff.py " <> args))
-        return (read (L8.unpack res))
+        let result = words $ L8.unpack res
+        if length result /= 1 then print (unwords result)
+        else print ()
+        return (read $ last result)
 
 nnTuple :: Environment Dist -> Expr -> M [Type]
 nnTuple env p@(Pair (p1,p2)) =
@@ -417,8 +420,11 @@ nnTuple env p@(Pair (p1,p2)) =
         let vsStr = vsToListStr vs
         let args = unwords $ expStr <> ["\"||\""] <> vsStr
         res <- readProcessStderr_ (shell ("python3 " <> "/home/dhz/probprog/src/nnTuple.py " <> args))
-        return (read (L8.unpack res))
-
+        let result = words $ L8.unpack res
+        if length result /= 1 then print (unwords result)
+        else print ()
+        return (read $ last result)
+    
 
 failnn :: Expr -> M ([Type], Btree String)
 failnn e = log_ (show e <> " is not nn'") $ return ([], leafNode "")
