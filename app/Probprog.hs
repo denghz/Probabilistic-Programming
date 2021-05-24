@@ -259,7 +259,7 @@ obey (Calculate (dist, t)) env =
     Mk (\k ->
       do
         putStrLn ("ac "<> show b)
-        pdf d
+        -- pdf d
         k (d,b)
       )
     
