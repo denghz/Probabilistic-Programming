@@ -527,7 +527,7 @@ nn' env e@(Apply (Variable "*") xs) =
   where
     memberType n t =
       let t' = getRange t in
-       all (Intervals.member n . fst) (rangeToList t')
+       all (\(r,b) -> not b || Intervals.member n r) (rangeToList t')
 
 nn' env e@(Apply (Variable id) xs)
   | id `elem` ["~", "inv", "log", "exp", "sin", "cos", "tan", "fst", "snd"] =
