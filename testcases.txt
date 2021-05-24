@@ -1,3 +1,1 @@
-
-let x ~ Uniform(0,1) in let y ~ Uniform(0,1) in return (x+y,x-y) in (L,L);
-
+let x ~ Uniform(0,1) in return (exp(x) + x) in L;

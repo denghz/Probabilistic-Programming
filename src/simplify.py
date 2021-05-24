@@ -5,7 +5,10 @@ def parseGlobalSymbol(s):
     if isinstance(s, numbers.Number):
         return s
     if isinstance(s, WLSymbol):
-        return s.name[7:]
+        if s.name == 'E':
+            return 'E'
+        else:
+            return s.name[7:]
     
 def parse(exp):
     symbol = parseGlobalSymbol(exp)
@@ -20,6 +23,9 @@ def parse(exp):
             p = args[1][0]
             
             e = args[0]
+            
+            if e == ['E']:
+                return ['Exp'] + args[1]
             if p < 0:
                 res = ["Inv"]
                 p = -p
@@ -50,6 +56,7 @@ def simplify(exp):
         freeVariables = session.evaluate(getfreeVars(f))
         ass =  wl.Element(wl.Alternatives(freeVariables), wl.Reals)
         wmres = session.evaluate(wl.FullSimplify(f,ass))
+        print(wmres)
         res = parse(wmres)
         return res
 
